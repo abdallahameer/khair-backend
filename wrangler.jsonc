@@ -30,6 +30,14 @@
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
 	"vars": {},
+
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "khair_db",
+			"database_id": "9c011263-bcd0-4636-b0cf-1a5e1e99729e",
+		},
+	],
 	/**
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/

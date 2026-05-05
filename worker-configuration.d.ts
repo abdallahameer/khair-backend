@@ -11,6 +11,11 @@ declare namespace Cloudflare {
 }
 interface Env extends Cloudflare.Env {}
 
+interface Env {
+	YOUTUBE_API_KEY: string;
+	DB: D1Database;
+}
+
 // Begin runtime types
 /*! *****************************************************************************
 Copyright (c) Cloudflare. All rights reserved.
