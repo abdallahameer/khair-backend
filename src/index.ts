@@ -12,11 +12,6 @@ export default {
 			return new Response(null, { headers: CORS });
 		}
 
-		// ─── YouTube Shorts ───────────────────────────────────────────
-		if (url.pathname === '/api/youtube/shorts' && request.method === 'GET') {
-			return handleYoutubeShorts(request, env);
-		}
-
 		// ─── Videos ───────────────────────────────────────────────────
 		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
 			return handleGetApprovedVideos(env);
@@ -52,50 +47,6 @@ export default {
 		return new Response('Not found', { status: 404, headers: CORS });
 	},
 };
-
-// ─── YouTube Shorts Handler ────────────────────────────────────────────────────
-
-async function handleYoutubeShorts(request: Request, env: Env): Promise<Response> {
-	const url = new URL(request.url);
-	const pageToken = url.searchParams.get('pageToken') || '';
-	const apiKey = env.YOUTUBE_API_KEY;
-
-	if (!apiKey) {
-		return Response.json({ error: 'YouTube API key not configured' }, { status: 500, headers: CORS });
-	}
-
-	const params = new URLSearchParams({
-		part: 'snippet,statistics,contentDetails',
-		chart: 'mostPopular',
-		maxResults: '50',
-		key: apiKey,
-		...(pageToken && { pageToken }),
-	});
-
-	const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`);
-	const data: any = await res.json();
-
-	if (!data.items || data.items.length === 0) {
-		return Response.json({ videos: [], nextPageToken: '' }, { headers: CORS });
-	}
-
-	const videos = [];
-	for (const item of data.items) {
-		const duration = item.contentDetails?.duration || '';
-		if (!isShort(duration)) continue;
-
-		videos.push({
-			id: item.id,
-			title: item.snippet?.title || '',
-			thumbnail: item.snippet?.thumbnails?.high?.url || '',
-			channel_name: item.snippet?.channelTitle || '',
-			view_count: item.statistics?.viewCount || '0',
-			embed_url: `https://www.youtube.com/embed/${item.id}`,
-		});
-	}
-
-	return Response.json({ videos, nextPageToken: data.nextPageToken || '' }, { headers: CORS });
-}
 
 // ─── Video Handlers ────────────────────────────────────────────────────────────
 
@@ -166,17 +117,4 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
 	}
 
 	return Response.json({ id: reviewer.id, username: reviewer.username }, { headers: CORS });
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function isShort(duration: string): boolean {
-	let minutes = 0;
-	let seconds = 0;
-	const minMatch = duration.match(/(\d+)M/);
-	const secMatch = duration.match(/(\d+)S/);
-	if (minMatch) minutes = parseInt(minMatch[1]);
-	if (secMatch) seconds = parseInt(secMatch[1]);
-	const total = minutes * 60 + seconds;
-	return total > 0 && total <= 60;
 }
