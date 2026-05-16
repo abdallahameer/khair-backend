@@ -20,6 +20,10 @@
 
 	"vars": {
 		"ADMIN_TOKEN": "khair-secret-2026",
+
+		"PENDING_PUBLIC_URL": "https://pub-62fcc0a01a774165922060927be3b405.r2.dev",
+
+		"APPROVED_PUBLIC_URL": "https://pub-1db7f60d58f54c89abd40ed6e0908bcd.r2.dev",
 	},
 
 	"d1_databases": [

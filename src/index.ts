@@ -5,6 +5,9 @@ interface Env {
 	APPROVED_BUCKET: R2Bucket;
 
 	ADMIN_TOKEN: string;
+
+	PENDING_PUBLIC_URL: string;
+	APPROVED_PUBLIC_URL: string;
 }
 
 const CORS = {
@@ -112,7 +115,13 @@ async function handleGetApprovedVideos(env: Env): Promise<Response> {
 	`,
 	).all();
 
-	return json(result.results);
+	const videos = result.results.map((video: any) => ({
+		...video,
+
+		video_url: `${env.APPROVED_PUBLIC_URL}/${video.video_url}`,
+	}));
+
+	return json(videos);
 }
 
 // GET PENDING VIDEOS
@@ -125,7 +134,13 @@ async function handleGetPendingVideos(env: Env): Promise<Response> {
 	`,
 	).all();
 
-	return json(result.results);
+	const videos = result.results.map((video: any) => ({
+		...video,
+
+		video_url: `${env.PENDING_PUBLIC_URL}/${video.video_url}`,
+	}));
+
+	return json(videos);
 }
 
 // UPLOAD VIDEO
