@@ -1,120 +1,381 @@
+interface Env {
+	DB: D1Database;
+
+	PENDING_BUCKET: R2Bucket;
+	APPROVED_BUCKET: R2Bucket;
+
+	ADMIN_TOKEN: string;
+}
+
 const CORS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-	'Access-Control-Allow-Headers': 'Content-Type',
+	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
+
+// CREATE JSON RESPONSE
+function json(data: any, status = 200): Response {
+	return Response.json(data, {
+		status,
+		headers: CORS,
+	});
+}
+
+// AUTH CHECK
+function isAuthorized(request: Request, env: Env): boolean {
+	const authHeader = request.headers.get('Authorization');
+
+	if (!authHeader) {
+		return false;
+	}
+
+	const token = authHeader.replace('Bearer ', '');
+
+	return token === env.ADMIN_TOKEN;
+}
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 
+		// OPTIONS
 		if (request.method === 'OPTIONS') {
-			return new Response(null, { headers: CORS });
+			return new Response(null, {
+				headers: CORS,
+			});
 		}
 
-		// ─── Videos ───────────────────────────────────────────────────
-		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
-			return handleGetApprovedVideos(env);
+		// HEALTH
+		if (url.pathname === '/healthz') {
+			return new Response('ok', {
+				headers: CORS,
+			});
 		}
 
-		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
-			return handleGetPendingVideos(env);
-		}
-
-		if (url.pathname === '/api/videos/upload' && request.method === 'POST') {
-			return handleUploadVideo(request, env);
-		}
-
-		if (url.pathname.startsWith('/api/videos/approve/') && request.method === 'POST') {
-			const id = url.pathname.split('/api/videos/approve/')[1];
-			return handleApproveVideo(id, env);
-		}
-
-		if (url.pathname.startsWith('/api/videos/reject/') && request.method === 'DELETE') {
-			const id = url.pathname.split('/api/videos/reject/')[1];
-			return handleRejectVideo(id, env);
-		}
-
-		// ─── Auth ─────────────────────────────────────────────────────
+		// LOGIN
 		if (url.pathname === '/api/auth/login' && request.method === 'POST') {
 			return handleLogin(request, env);
 		}
 
-		if (url.pathname === '/healthz') {
-			return new Response('ok', { headers: CORS });
+		// GET APPROVED VIDEOS
+		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
+			return handleGetApprovedVideos(env);
 		}
 
-		return new Response('Not found', { status: 404, headers: CORS });
+		// GET PENDING VIDEOS
+		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
+			if (!isAuthorized(request, env)) {
+				return json({ error: 'Unauthorized' }, 401);
+			}
+
+			return handleGetPendingVideos(env);
+		}
+
+		// UPLOAD VIDEO
+		if (url.pathname === '/api/videos/upload' && request.method === 'POST') {
+			return handleUploadVideo(request, env);
+		}
+
+		// APPROVE VIDEO
+		if (url.pathname.startsWith('/api/videos/approve/') && request.method === 'POST') {
+			if (!isAuthorized(request, env)) {
+				return json({ error: 'Unauthorized' }, 401);
+			}
+
+			const id = url.pathname.split('/api/videos/approve/')[1];
+
+			return handleApproveVideo(id, env);
+		}
+
+		// REJECT VIDEO
+		if (url.pathname.startsWith('/api/videos/reject/') && request.method === 'DELETE') {
+			if (!isAuthorized(request, env)) {
+				return json({ error: 'Unauthorized' }, 401);
+			}
+
+			const id = url.pathname.split('/api/videos/reject/')[1];
+
+			return handleRejectVideo(id, env);
+		}
+
+		return json({ error: 'Not Found' }, 404);
 	},
 };
 
-// ─── Video Handlers ────────────────────────────────────────────────────────────
-
+// GET APPROVED VIDEOS
 async function handleGetApprovedVideos(env: Env): Promise<Response> {
-	const result = await env.DB.prepare(`SELECT id, video_url, approved_at FROM approved_videos ORDER BY approved_at ASC`).all();
+	const result = await env.DB.prepare(
+		`
+		SELECT id, video_url, approved_at
+		FROM approved_videos
+		ORDER BY approved_at DESC
+	`,
+	).all();
 
-	return Response.json(result.results, { headers: CORS });
+	return json(result.results);
 }
 
+// GET PENDING VIDEOS
 async function handleGetPendingVideos(env: Env): Promise<Response> {
-	const result = await env.DB.prepare(`SELECT id, video_url, uploaded_at FROM pending_videos ORDER BY uploaded_at ASC`).all();
+	const result = await env.DB.prepare(
+		`
+		SELECT id, video_url, uploaded_at
+		FROM pending_videos
+		ORDER BY uploaded_at DESC
+	`,
+	).all();
 
-	return Response.json(result.results, { headers: CORS });
+	return json(result.results);
 }
 
+// UPLOAD VIDEO
 async function handleUploadVideo(request: Request, env: Env): Promise<Response> {
-	const body = (await request.json()) as { video_url: string };
+	try {
+		const formData = await request.formData();
 
-	if (!body.video_url) {
-		return Response.json({ error: 'video_url is required' }, { status: 400, headers: CORS });
+		const file = formData.get('video') as File;
+
+		if (!file) {
+			return json(
+				{
+					error: 'No video uploaded',
+				},
+				400,
+			);
+		}
+
+		// MAX 100MB
+		const MAX_SIZE = 100 * 1024 * 1024;
+
+		if (file.size > MAX_SIZE) {
+			return json(
+				{
+					error: 'Video too large',
+				},
+				400,
+			);
+		}
+
+		// ALLOWED TYPES
+		const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+
+		if (!allowedTypes.includes(file.type)) {
+			return json(
+				{
+					error: 'Invalid video format',
+				},
+				400,
+			);
+		}
+
+		const id = crypto.randomUUID();
+
+		const extension = file.name.split('.').pop();
+
+		const key = `${id}.${extension}`;
+
+		// UPLOAD TO PENDING R2
+		await env.PENDING_BUCKET.put(key, file.stream(), {
+			httpMetadata: {
+				contentType: file.type,
+			},
+		});
+
+		const uploadedAt = new Date().toISOString();
+
+		// SAVE TO DATABASE
+		await env.DB.prepare(
+			`
+			INSERT INTO pending_videos (
+				id,
+				video_url,
+				uploaded_at
+			)
+			VALUES (?, ?, ?)
+		`,
+		)
+			.bind(id, key, uploadedAt)
+			.run();
+
+		return json({
+			success: true,
+			id,
+			video_url: key,
+			uploaded_at: uploadedAt,
+		});
+	} catch (error) {
+		return json(
+			{
+				error: 'Upload failed',
+			},
+			500,
+		);
 	}
-
-	const id = crypto.randomUUID();
-	const uploadedAt = new Date().toISOString();
-
-	await env.DB.prepare(`INSERT INTO pending_videos (id, video_url, uploaded_at) VALUES (?, ?, ?)`)
-		.bind(id, body.video_url, uploadedAt)
-		.run();
-
-	return Response.json({ id, video_url: body.video_url, uploaded_at: uploadedAt }, { headers: CORS });
 }
 
+// APPROVE VIDEO
 async function handleApproveVideo(id: string, env: Env): Promise<Response> {
-	const video = await env.DB.prepare(`SELECT * FROM pending_videos WHERE id = ?`).bind(id).first();
+	const video = await env.DB.prepare(
+		`
+		SELECT *
+		FROM pending_videos
+		WHERE id = ?
+	`,
+	)
+		.bind(id)
+		.first();
 
 	if (!video) {
-		return Response.json({ error: 'Video not found' }, { status: 404, headers: CORS });
+		return json(
+			{
+				error: 'Video not found',
+			},
+			404,
+		);
 	}
+
+	const key = video.video_url as string;
+
+	// GET FILE FROM PENDING
+	const object = await env.PENDING_BUCKET.get(key);
+
+	if (!object) {
+		return json(
+			{
+				error: 'Video file missing',
+			},
+			404,
+		);
+	}
+
+	// COPY TO APPROVED
+	await env.APPROVED_BUCKET.put(key, object.body);
+
+	// DELETE FROM PENDING BUCKET
+	await env.PENDING_BUCKET.delete(key);
 
 	const approvedAt = new Date().toISOString();
 
-	await env.DB.prepare(`INSERT INTO approved_videos (id, video_url, approved_at) VALUES (?, ?, ?)`)
-		.bind(video.id, video.video_url, approvedAt)
+	// INSERT APPROVED
+	await env.DB.prepare(
+		`
+		INSERT INTO approved_videos (
+			id,
+			video_url,
+			approved_at
+		)
+		VALUES (?, ?, ?)
+	`,
+	)
+		.bind(video.id, key, approvedAt)
 		.run();
 
-	await env.DB.prepare(`DELETE FROM pending_videos WHERE id = ?`).bind(id).run();
+	// DELETE PENDING ROW
+	await env.DB.prepare(
+		`
+		DELETE FROM pending_videos
+		WHERE id = ?
+	`,
+	)
+		.bind(id)
+		.run();
 
-	return Response.json({ message: 'approved' }, { headers: CORS });
+	return json({
+		success: true,
+		message: 'Video approved',
+	});
 }
 
+// REJECT VIDEO
 async function handleRejectVideo(id: string, env: Env): Promise<Response> {
-	await env.DB.prepare(`DELETE FROM pending_videos WHERE id = ?`).bind(id).run();
-
-	return Response.json({ message: 'rejected' }, { headers: CORS });
-}
-
-// ─── Auth Handler ──────────────────────────────────────────────────────────────
-
-async function handleLogin(request: Request, env: Env): Promise<Response> {
-	const body = (await request.json()) as { username: string; password: string };
-
-	const reviewer = await env.DB.prepare(`SELECT id, username FROM reviewers WHERE username = ? AND password = ?`)
-		.bind(body.username.toLowerCase(), body.password)
+	const video = await env.DB.prepare(
+		`
+		SELECT *
+		FROM pending_videos
+		WHERE id = ?
+	`,
+	)
+		.bind(id)
 		.first();
 
-	if (!reviewer) {
-		return Response.json({ error: 'Invalid username or password' }, { status: 401, headers: CORS });
+	if (!video) {
+		return json(
+			{
+				error: 'Video not found',
+			},
+			404,
+		);
 	}
 
-	return Response.json({ id: reviewer.id, username: reviewer.username }, { headers: CORS });
+	const key = video.video_url as string;
+
+	// DELETE FROM R2
+	await env.PENDING_BUCKET.delete(key);
+
+	// DELETE DB ROW
+	await env.DB.prepare(
+		`
+		DELETE FROM pending_videos
+		WHERE id = ?
+	`,
+	)
+		.bind(id)
+		.run();
+
+	return json({
+		success: true,
+		message: 'Video rejected',
+	});
+}
+
+// LOGIN
+async function handleLogin(request: Request, env: Env): Promise<Response> {
+	try {
+		const body = (await request.json()) as {
+			username: string;
+			password: string;
+		};
+
+		if (!body.username || !body.password) {
+			return json(
+				{
+					error: 'Username and password required',
+				},
+				400,
+			);
+		}
+
+		const reviewer = await env.DB.prepare(
+			`
+			SELECT id, username
+			FROM reviewers
+			WHERE username = ?
+			AND password = ?
+		`,
+		)
+			.bind(body.username.toLowerCase(), body.password)
+			.first();
+
+		if (!reviewer) {
+			return json(
+				{
+					error: 'Invalid username or password',
+				},
+				401,
+			);
+		}
+
+		return json({
+			success: true,
+			token: env.ADMIN_TOKEN,
+			reviewer,
+		});
+	} catch (error) {
+		return json(
+			{
+				error: 'Login failed',
+			},
+			500,
+		);
+	}
 }
