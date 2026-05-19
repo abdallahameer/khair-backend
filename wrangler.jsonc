@@ -1,31 +1,13 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-
 	"name": "my-worker",
 	"main": "src/index.ts",
 
 	"compatibility_date": "2026-05-04",
-
-	"observability": {
-		"enabled": true,
-	},
-
-	"upload_source_maps": true,
-
 	"compatibility_flags": ["nodejs_compat"],
-
 	"vars": {
-		"ADMIN_TOKEN": "khair-secret-2026",
-
 		"PENDING_PUBLIC_URL": "https://pub-62fcc0a01a774165922060927be3b405.r2.dev",
-
 		"APPROVED_PUBLIC_URL": "https://pub-1db7f60d58f54c89abd40ed6e0908bcd.r2.dev",
 	},
-
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -33,7 +15,6 @@
 			"database_id": "9c011263-bcd0-4636-b0cf-1a5e1e99729e",
 		},
 	],
-
 	"r2_buckets": [
 		{
 			"binding": "PENDING_BUCKET",
