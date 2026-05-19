@@ -1,36 +1,12 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "my-worker",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-05-04",
-	"observability": {
-		"enabled": true,
-	},
-	"upload_source_maps": true,
 	"compatibility_flags": ["nodejs_compat"],
-	/**
-	 * Smart Placement
-	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": {  "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	"vars": {},
-
+	"vars": {
+		"PENDING_PUBLIC_URL": "https://pub-62fcc0a01a774165922060927be3b405.r2.dev",
+		"APPROVED_PUBLIC_URL": "https://pub-1db7f60d58f54c89abd40ed6e0908bcd.r2.dev",
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -38,14 +14,14 @@
 			"database_id": "9c011263-bcd0-4636-b0cf-1a5e1e99729e",
 		},
 	],
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": {  "directory": "./public/",  "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+	"r2_buckets": [
+		{
+			"binding": "PENDING_BUCKET",
+			"bucket_name": "pending-videos",
+		},
+		{
+			"binding": "APPROVED_BUCKET",
+			"bucket_name": "approved-videos",
+		},
+	],
 }
