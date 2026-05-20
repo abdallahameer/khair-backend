@@ -1,5 +1,5 @@
 import { Env, CORS } from './types';
-import { handleLogin } from './handlers/auth';
+import { handleReviewerLogin, handleUserLogin, handleUserRegister, handleGetUserProfile } from './handlers/auth';
 import {
 	handleGetApprovedVideos,
 	handleGetPendingVideos,
@@ -8,80 +8,60 @@ import {
 	handleRejectVideo,
 } from './handlers/videos';
 
-// CREATE JSON RESPONSE
-function json(data: any, status = 200): Response {
-	return Response.json(data, {
-		status,
-		headers: CORS,
-	});
-}
-
-// AUTH CHECK
-function isAuthorized(request: Request, env: Env): boolean {
-	const authHeader = request.headers.get('Authorization');
-
-	if (!authHeader) {
-		return false;
-	}
-
-	const token = authHeader.replace('Bearer ', '');
-
-	return token === env.ADMIN_TOKEN;
-}
-
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 
-		// OPTIONS
 		if (request.method === 'OPTIONS') {
-			return new Response(null, {
-				headers: CORS,
-			});
+			return new Response(null, { headers: CORS });
 		}
 
+		// ─── Videos ───────────────────────────────────────────────
 		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
 			return handleGetApprovedVideos(env);
 		}
 
-		// GET PENDING VIDEOS
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
-			if (!isAuthorized(request, env)) {
-				return json({ error: 'Unauthorized' }, 401);
-			}
-
 			return handleGetPendingVideos(env);
 		}
 
-		// UPLOAD VIDEO
 		if (url.pathname === '/api/videos/upload' && request.method === 'POST') {
 			return handleUploadVideo(request, env);
 		}
 
-		// APPROVE VIDEO
 		if (url.pathname.startsWith('/api/videos/approve/') && request.method === 'POST') {
-			if (!isAuthorized(request, env)) {
-				return json({ error: 'Unauthorized' }, 401);
-			}
-
 			const id = url.pathname.split('/api/videos/approve/')[1];
-
 			return handleApproveVideo(id, env);
 		}
 
-		// REJECT VIDEO
 		if (url.pathname.startsWith('/api/videos/reject/') && request.method === 'DELETE') {
-			if (!isAuthorized(request, env)) {
-				return json({ error: 'Unauthorized' }, 401);
-			}
-
-		if (url.pathname === '/api/auth/login' && request.method === 'POST') {
-			return handleLogin(request, env);
-		}
-
+			const id = url.pathname.split('/api/videos/reject/')[1];
 			return handleRejectVideo(id, env);
 		}
 
-		return json({ error: 'Not Found' }, 404);
+		// ─── Auth ─────────────────────────────────────────────────
+		if (url.pathname === '/api/auth/reviewer-login' && request.method === 'POST') {
+			return handleReviewerLogin(request, env);
+		}
+
+		if (url.pathname === '/api/users/register' && request.method === 'POST') {
+			return handleUserRegister(request, env);
+		}
+
+		if (url.pathname === '/api/users/login' && request.method === 'POST') {
+			return handleUserLogin(request, env);
+		}
+
+		// ─── User profiles ─────────────────────────────────────────
+		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
+			const userId = url.pathname.split('/api/users/')[1];
+			return handleGetUserProfile(userId, env);
+		}
+
+		if (url.pathname === '/healthz') {
+			return new Response('ok', { headers: CORS });
+		}
+
+		return new Response('Not found', { status: 404, headers: CORS });
 	},
 };
