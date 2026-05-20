@@ -1,17 +1,32 @@
 import { Env, CORS } from '../types';
 
+// Main feed — all approved videos
 export async function handleGetApprovedVideos(env: Env): Promise<Response> {
-	const result = await env.DB.prepare(`SELECT id, video_url, approved_at FROM approved_videos ORDER BY approved_at ASC`).all();
+	const result = await env.DB.prepare(
+		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username
+     FROM videos
+     JOIN users ON videos.user_id = users.id
+     WHERE videos.status = 'approved'
+     ORDER BY videos.uploaded_at DESC`,
+	).all();
 
 	return Response.json(result.results, { headers: CORS });
 }
 
+// Reviewer — all pending videos
 export async function handleGetPendingVideos(env: Env): Promise<Response> {
-	const result = await env.DB.prepare(`SELECT id, video_url, uploaded_at FROM pending_videos ORDER BY uploaded_at ASC`).all();
+	const result = await env.DB.prepare(
+		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username
+     FROM videos
+     JOIN users ON videos.user_id = users.id
+     WHERE videos.status = 'pending'
+     ORDER BY videos.uploaded_at ASC`,
+	).all();
 
 	return Response.json(result.results, { headers: CORS });
 }
 
+// Upload — requires user_id in the form
 export async function handleUploadVideo(request: Request, env: Env): Promise<Response> {
 	let formData: FormData;
 	try {
@@ -21,9 +36,21 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 	}
 
 	const file = formData.get('video') as File | null;
+	const userId = formData.get('user_id') as string | null;
 
 	if (!file) {
 		return Response.json({ error: 'No video file provided' }, { status: 400, headers: CORS });
+	}
+
+	if (!userId) {
+		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+	}
+
+	// Make sure the user exists
+	const user = await env.DB.prepare(`SELECT id FROM users WHERE id = ?`).bind(userId).first();
+
+	if (!user) {
+		return Response.json({ error: 'User not found' }, { status: 404, headers: CORS });
 	}
 
 	if (!file.type.startsWith('video/')) {
@@ -37,60 +64,48 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 	const ext = file.name.split('.').pop() ?? 'mp4';
 	const key = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
-	await env.PENDING_BUCKET.put(key, file.stream(), {
+	await env.VIDEOS_BUCKET.put(key, file.stream(), {
 		httpMetadata: { contentType: file.type },
 	});
 
-	const videoUrl = `${env.PENDING_PUBLIC_URL}/${key}`;
+	const videoUrl = `${env.R2_PUBLIC_URL}/${key}`;
 	const id = crypto.randomUUID();
 	const uploadedAt = new Date().toISOString();
 
-	await env.DB.prepare(`INSERT INTO pending_videos (id, video_url, uploaded_at) VALUES (?, ?, ?)`).bind(id, videoUrl, uploadedAt).run();
+	await env.DB.prepare(`INSERT INTO videos (id, user_id, video_url, status, uploaded_at) VALUES (?, ?, ?, 'pending', ?)`)
+		.bind(id, userId, videoUrl, uploadedAt)
+		.run();
 
 	return Response.json({ id, video_url: videoUrl, uploaded_at: uploadedAt }, { headers: CORS });
 }
 
+// Approve
 export async function handleApproveVideo(id: string, env: Env): Promise<Response> {
-	const video = await env.DB.prepare(`SELECT * FROM pending_videos WHERE id = ?`).bind(id).first<{ id: string; video_url: string }>();
+	const video = await env.DB.prepare(`SELECT * FROM videos WHERE id = ? AND status = 'pending'`)
+		.bind(id)
+		.first<{ id: string; video_url: string }>();
 
 	if (!video) {
 		return Response.json({ error: 'Video not found' }, { status: 404, headers: CORS });
 	}
 
-	const key = video.video_url.split('/').pop()!;
-	const fileObject = await env.PENDING_BUCKET.get(key);
-
-	if (!fileObject) {
-		return Response.json({ error: 'File not found in storage' }, { status: 404, headers: CORS });
-	}
-
-	await env.APPROVED_BUCKET.put(key, fileObject.body, {
-		httpMetadata: fileObject.httpMetadata,
-	});
-
-	await env.PENDING_BUCKET.delete(key);
-
-	const approvedUrl = `${env.APPROVED_PUBLIC_URL}/${key}`;
-	const approvedAt = new Date().toISOString();
-
-	await env.DB.prepare(`INSERT INTO approved_videos (id, video_url, approved_at) VALUES (?, ?, ?)`)
-		.bind(video.id, approvedUrl, approvedAt)
-		.run();
-
-	await env.DB.prepare(`DELETE FROM pending_videos WHERE id = ?`).bind(id).run();
+	await env.DB.prepare(`UPDATE videos SET status = 'approved' WHERE id = ?`).bind(id).run();
 
 	return Response.json({ message: 'approved' }, { headers: CORS });
 }
 
+// Reject — delete from D1 and R2
 export async function handleRejectVideo(id: string, env: Env): Promise<Response> {
-	const video = await env.DB.prepare(`SELECT * FROM pending_videos WHERE id = ?`).bind(id).first<{ id: string; video_url: string }>();
+	const video = await env.DB.prepare(`SELECT * FROM videos WHERE id = ? AND status = 'pending'`)
+		.bind(id)
+		.first<{ id: string; video_url: string }>();
 
 	if (video) {
 		const key = video.video_url.split('/').pop();
-		if (key) await env.PENDING_BUCKET.delete(key);
+		if (key) await env.VIDEOS_BUCKET.delete(key);
 	}
 
-	await env.DB.prepare(`DELETE FROM pending_videos WHERE id = ?`).bind(id).run();
+	await env.DB.prepare(`DELETE FROM videos WHERE id = ?`).bind(id).run();
 
 	return Response.json({ message: 'rejected' }, { headers: CORS });
 }

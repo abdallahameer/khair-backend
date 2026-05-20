@@ -1,9 +1,7 @@
 export interface Env {
 	DB: D1Database;
-	PENDING_BUCKET: R2Bucket;
-	APPROVED_BUCKET: R2Bucket;
-	PENDING_PUBLIC_URL: string;
-	APPROVED_PUBLIC_URL: string;
+	VIDEOS_BUCKET: R2Bucket;
+	R2_PUBLIC_URL: string;
 }
 
 export const CORS = {

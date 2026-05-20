@@ -1,12 +1,10 @@
 {
 	"name": "my-worker",
 	"main": "src/index.ts",
-
 	"compatibility_date": "2026-05-04",
 	"compatibility_flags": ["nodejs_compat"],
 	"vars": {
-		"PENDING_PUBLIC_URL": "https://pub-62fcc0a01a774165922060927be3b405.r2.dev",
-		"APPROVED_PUBLIC_URL": "https://pub-1db7f60d58f54c89abd40ed6e0908bcd.r2.dev",
+		"R2_PUBLIC_URL": "https://pub-62fcc0a01a774165922060927be3b405.r2.dev",
 	},
 	"d1_databases": [
 		{
@@ -17,12 +15,8 @@
 	],
 	"r2_buckets": [
 		{
-			"binding": "PENDING_BUCKET",
+			"binding": "VIDEOS_BUCKET",
 			"bucket_name": "pending-videos",
-		},
-		{
-			"binding": "APPROVED_BUCKET",
-			"bucket_name": "approved-videos",
 		},
 	],
 }
