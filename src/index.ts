@@ -6,6 +6,7 @@ import {
 	handleUploadVideo,
 	handleApproveVideo,
 	handleRejectVideo,
+	handleServeVideo,
 } from './handlers/videos';
 
 export default {
@@ -60,6 +61,11 @@ export default {
 
 		if (url.pathname === '/healthz') {
 			return new Response('ok', { headers: CORS });
+		}
+
+		if (url.pathname.startsWith('/api/videos/file/') && request.method === 'GET') {
+			const key = url.pathname.split('/api/videos/file/')[1];
+			return handleServeVideo(key, request, env);
 		}
 
 		return new Response('Not found', { status: 404, headers: CORS });

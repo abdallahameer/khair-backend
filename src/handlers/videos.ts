@@ -68,7 +68,7 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 		httpMetadata: { contentType: file.type },
 	});
 
-	const videoUrl = `${env.R2_PUBLIC_URL}/${key}`;
+	const videoUrl = `https://my-worker.mohammad-3db.workers.dev/api/videos/file/${key}`;
 	const id = crypto.randomUUID();
 	const uploadedAt = new Date().toISOString();
 
@@ -108,4 +108,43 @@ export async function handleRejectVideo(id: string, env: Env): Promise<Response>
 	await env.DB.prepare(`DELETE FROM videos WHERE id = ?`).bind(id).run();
 
 	return Response.json({ message: 'rejected' }, { headers: CORS });
+}
+
+export async function handleServeVideo(key: string, request: Request, env: Env): Promise<Response> {
+	const object = await env.VIDEOS_BUCKET.get(key);
+
+	if (!object) {
+		return new Response('Video not found', { status: 404, headers: CORS });
+	}
+
+	const headers = new Headers();
+	headers.set('Access-Control-Allow-Origin', '*');
+	headers.set('Access-Control-Allow-Methods', 'GET, HEAD');
+	headers.set('Access-Control-Allow-Headers', 'Range, Content-Type');
+	headers.set('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+	headers.set('Content-Type', object.httpMetadata?.contentType ?? 'video/mp4');
+	headers.set('Accept-Ranges', 'bytes');
+	headers.set('Cache-Control', 'public, max-age=31536000');
+
+	// Handle range requests (needed for video seeking)
+	const rangeHeader = request.headers.get('Range');
+	if (rangeHeader) {
+		const size = object.size;
+		const [start, end] = rangeHeader
+			.replace('bytes=', '')
+			.split('-')
+			.map((v) => (v ? parseInt(v) : undefined));
+
+		const startByte = start ?? 0;
+		const endByte = end ?? size - 1;
+		const chunkSize = endByte - startByte + 1;
+
+		headers.set('Content-Range', `bytes ${startByte}-${endByte}/${size}`);
+		headers.set('Content-Length', chunkSize.toString());
+
+		return new Response(object.body, { status: 206, headers });
+	}
+
+	headers.set('Content-Length', object.size.toString());
+	return new Response(object.body, { status: 200, headers });
 }
