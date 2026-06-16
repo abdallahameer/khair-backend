@@ -64,7 +64,7 @@ export async function handleUserLogin(request: Request, env: Env): Promise<Respo
 
 // Get user profile + their approved videos
 export async function handleGetUserProfile(userId: string, env: Env): Promise<Response> {
-	const user = await env.DB.prepare(`SELECT id, username, created_at FROM users WHERE id = ?`).bind(userId).first();
+	const user = await env.DB.prepare(`SELECT id, username, created_at, profile_image FROM users WHERE id = ?`).bind(userId).first();
 
 	if (!user) {
 		return Response.json({ error: 'User not found' }, { status: 404, headers: CORS });
@@ -77,4 +77,46 @@ export async function handleGetUserProfile(userId: string, env: Env): Promise<Re
 		.all();
 
 	return Response.json({ user, videos: videos.results }, { headers: CORS });
+}
+
+// Upload profile image
+export async function handleUploadProfileImage(request: Request, env: Env): Promise<Response> {
+	let formData: FormData;
+	try {
+		formData = await request.formData();
+	} catch {
+		return Response.json({ error: 'Expected multipart form data' }, { status: 400, headers: CORS });
+	}
+
+	const file = formData.get('image') as File | null;
+	const userId = formData.get('user_id') as string | null;
+
+	if (!file) {
+		return Response.json({ error: 'No image file provided' }, { status: 400, headers: CORS });
+	}
+
+	if (!userId) {
+		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+	}
+
+	if (!file.type.startsWith('image/')) {
+		return Response.json({ error: 'File must be an image' }, { status: 400, headers: CORS });
+	}
+
+	if (file.size > 5 * 1024 * 1024) {
+		return Response.json({ error: 'Image too large (max 5MB)' }, { status: 400, headers: CORS });
+	}
+
+	const ext = file.name.split('.').pop() ?? 'jpg';
+	const key = `${userId}-${Date.now()}.${ext}`;
+
+	await env.IMAGES_BUCKET.put(key, file.stream(), {
+		httpMetadata: { contentType: file.type },
+	});
+
+	const imageUrl = `${env.R2_PUBLIC_URL_IMAGES}/${key}`;
+
+	await env.DB.prepare(`UPDATE users SET profile_image = ? WHERE id = ?`).bind(imageUrl, userId).run();
+
+	return Response.json({ profile_image: imageUrl }, { headers: CORS });
 }

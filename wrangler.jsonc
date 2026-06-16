@@ -5,6 +5,7 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"vars": {
 		"R2_PUBLIC_URL": "https://pub-62fcc0a01a774165922060927be3b405.r2.dev",
+		"R2_PUBLIC_URL_IMAGES": "https://pub-560828ac4d84492abdfd99f47eb0479e.r2.dev",
 	},
 	"d1_databases": [
 		{
@@ -17,6 +18,10 @@
 		{
 			"binding": "VIDEOS_BUCKET",
 			"bucket_name": "pending-videos",
+		},
+		{
+			"binding": "IMAGES_BUCKET",
+			"bucket_name": "profile-images",
 		},
 	],
 }
