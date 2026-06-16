@@ -1,5 +1,5 @@
 import { Env, CORS } from './types';
-import { handleReviewerLogin, handleUserLogin, handleUserRegister, handleGetUserProfile } from './handlers/auth';
+import { handleReviewerLogin, handleUserLogin, handleUserRegister, handleGetUserProfile, handleUploadProfileImage } from './handlers/auth';
 import {
 	handleGetApprovedVideos,
 	handleGetPendingVideos,
@@ -56,6 +56,10 @@ export default {
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
 			return handleGetUserProfile(userId, env);
+		}
+
+		if (url.pathname === '/api/users/upload-profile-image' && request.method === 'POST') {
+			return handleUploadProfileImage(request, env);
 		}
 
 		if (url.pathname === '/healthz') {
