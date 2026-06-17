@@ -7,6 +7,18 @@ import {
 	handleApproveVideo,
 	handleRejectVideo,
 } from './handlers/videos';
+import {
+	handleLikeVideo,
+	handleUnlikeVideo,
+	handleGetVideoLikes,
+	handleGetUserLikedVideos,
+	handleSaveVideo,
+	handleUnsaveVideo,
+	handleGetUserSavedVideos,
+	handleRecordView,
+	handleAddComment,
+	handleGetComments,
+} from './handlers/engagement';
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -18,7 +30,8 @@ export default {
 
 		// ─── Videos ───────────────────────────────────────────────
 		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
-			return handleGetApprovedVideos(env);
+			const userId = url.searchParams.get('user_id') ?? undefined;
+			return handleGetApprovedVideos(env, userId);
 		}
 
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
@@ -60,6 +73,60 @@ export default {
 
 		if (url.pathname === '/api/users/upload-profile-image' && request.method === 'POST') {
 			return handleUploadProfileImage(request, env);
+		}
+
+		// ─── Likes ────────────────────────────────────────────────
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/like$/) && request.method === 'POST') {
+			const videoId = url.pathname.split('/')[3];
+			return handleLikeVideo(videoId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/like$/) && request.method === 'DELETE') {
+			const videoId = url.pathname.split('/')[3];
+			return handleUnlikeVideo(videoId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/likes$/) && request.method === 'GET') {
+			const videoId = url.pathname.split('/')[3];
+			return handleGetVideoLikes(videoId, env);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/liked-videos$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			return handleGetUserLikedVideos(userId, env);
+		}
+
+		// ─── Saves ────────────────────────────────────────────────
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/save$/) && request.method === 'POST') {
+			const videoId = url.pathname.split('/')[3];
+			return handleSaveVideo(videoId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/save$/) && request.method === 'DELETE') {
+			const videoId = url.pathname.split('/')[3];
+			return handleUnsaveVideo(videoId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/saved-videos$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			return handleGetUserSavedVideos(userId, env);
+		}
+
+		// ─── Views ────────────────────────────────────────────────
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/view$/) && request.method === 'POST') {
+			const videoId = url.pathname.split('/')[3];
+			return handleRecordView(videoId, request, env);
+		}
+
+		// ─── Comments ─────────────────────────────────────────────
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/comments$/) && request.method === 'POST') {
+			const videoId = url.pathname.split('/')[3];
+			return handleAddComment(videoId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/comments$/) && request.method === 'GET') {
+			const videoId = url.pathname.split('/')[3];
+			return handleGetComments(videoId, env);
 		}
 
 		if (url.pathname === '/healthz') {
