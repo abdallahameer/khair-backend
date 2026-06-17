@@ -2,30 +2,33 @@ import { Env, CORS } from '../types';
 
 // Main feed — all approved videos
 export async function handleGetApprovedVideos(env: Env, userId?: string): Promise<Response> {
-	const result = await env.DB.prepare(
-		`SELECT 
-       videos.id, 
-       videos.video_url, 
-       videos.uploaded_at, 
-       users.id as user_id, 
-       users.username,
-       (SELECT COUNT(*) FROM likes WHERE likes.video_id = videos.id) as likes_count,
-       (SELECT COUNT(*) FROM views WHERE views.video_id = videos.id) as views_count,
-       (SELECT COUNT(*) FROM comments WHERE comments.video_id = videos.id) as comments_count,
-       ${userId ? `(SELECT COUNT(*) FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,` : '0 as is_liked,'}
-       ${userId ? `(SELECT COUNT(*) FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved` : '0 as is_saved'}
-     FROM videos
-     JOIN users ON videos.user_id = users.id
-     WHERE videos.status = 'approved'
-     ORDER BY videos.uploaded_at DESC`,
-	)
-		.bind(...(userId ? [userId, userId] : []))
-		.all();
+	const query = userId
+		? `SELECT 
+         videos.id, videos.video_url, videos.uploaded_at, 
+         videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
+         users.id as user_id, users.username,
+         EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
+         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
+       FROM videos
+       JOIN users ON videos.user_id = users.id
+       WHERE videos.status = 'approved'
+       ORDER BY videos.uploaded_at DESC`
+		: `SELECT 
+         videos.id, videos.video_url, videos.uploaded_at,
+         videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
+         users.id as user_id, users.username,
+         0 as is_liked, 0 as is_saved
+       FROM videos
+       JOIN users ON videos.user_id = users.id
+       WHERE videos.status = 'approved'
+       ORDER BY videos.uploaded_at DESC`;
+
+	const stmt = userId ? env.DB.prepare(query).bind(userId, userId) : env.DB.prepare(query);
+	const result = await stmt.all();
 
 	return Response.json(result.results, { headers: CORS });
 }
 
-// Reviewer — all pending videos
 export async function handleGetPendingVideos(env: Env): Promise<Response> {
 	const result = await env.DB.prepare(
 		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username

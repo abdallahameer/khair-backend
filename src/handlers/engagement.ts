@@ -11,8 +11,9 @@ export async function handleLikeVideo(videoId: string, request: Request, env: En
 
 	try {
 		await env.DB.prepare(`INSERT INTO likes (user_id, video_id) VALUES (?, ?)`).bind(body.user_id, videoId).run();
+		await env.DB.prepare(`UPDATE videos SET likes_count = likes_count + 1 WHERE id = ?`).bind(videoId).run();
 	} catch {
-		// Already liked — ignore (primary key conflict)
+		// Already liked — ignore (primary key conflict), don't increment again
 	}
 
 	return Response.json({ message: 'liked' }, { headers: CORS });
@@ -25,7 +26,12 @@ export async function handleUnlikeVideo(videoId: string, request: Request, env: 
 		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
 	}
 
-	await env.DB.prepare(`DELETE FROM likes WHERE user_id = ? AND video_id = ?`).bind(body.user_id, videoId).run();
+	const result = await env.DB.prepare(`DELETE FROM likes WHERE user_id = ? AND video_id = ?`).bind(body.user_id, videoId).run();
+
+	// Only decrement if a row was actually deleted (avoids going negative)
+	if (result.meta.changes > 0) {
+		await env.DB.prepare(`UPDATE videos SET likes_count = likes_count - 1 WHERE id = ?`).bind(videoId).run();
+	}
 
 	return Response.json({ message: 'unliked' }, { headers: CORS });
 }
@@ -46,7 +52,8 @@ export async function handleGetVideoLikes(videoId: string, env: Env): Promise<Re
 
 export async function handleGetUserLikedVideos(userId: string, env: Env): Promise<Response> {
 	const result = await env.DB.prepare(
-		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username
+		`SELECT videos.id, videos.video_url, videos.uploaded_at, videos.likes_count, videos.comments_count, videos.views_count,
+            users.id as user_id, users.username
      FROM likes
      JOIN videos ON likes.video_id = videos.id
      JOIN users ON videos.user_id = users.id
@@ -70,6 +77,7 @@ export async function handleSaveVideo(videoId: string, request: Request, env: En
 
 	try {
 		await env.DB.prepare(`INSERT INTO saves (user_id, video_id) VALUES (?, ?)`).bind(body.user_id, videoId).run();
+		await env.DB.prepare(`UPDATE videos SET saves_count = saves_count + 1 WHERE id = ?`).bind(videoId).run();
 	} catch {
 		// Already saved — ignore
 	}
@@ -84,14 +92,19 @@ export async function handleUnsaveVideo(videoId: string, request: Request, env: 
 		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
 	}
 
-	await env.DB.prepare(`DELETE FROM saves WHERE user_id = ? AND video_id = ?`).bind(body.user_id, videoId).run();
+	const result = await env.DB.prepare(`DELETE FROM saves WHERE user_id = ? AND video_id = ?`).bind(body.user_id, videoId).run();
+
+	if (result.meta.changes > 0) {
+		await env.DB.prepare(`UPDATE videos SET saves_count = saves_count - 1 WHERE id = ?`).bind(videoId).run();
+	}
 
 	return Response.json({ message: 'unsaved' }, { headers: CORS });
 }
 
 export async function handleGetUserSavedVideos(userId: string, env: Env): Promise<Response> {
 	const result = await env.DB.prepare(
-		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username
+		`SELECT videos.id, videos.video_url, videos.uploaded_at, videos.likes_count, videos.comments_count, videos.views_count,
+            users.id as user_id, users.username
      FROM saves
      JOIN videos ON saves.video_id = videos.id
      JOIN users ON videos.user_id = users.id
@@ -115,6 +128,7 @@ export async function handleRecordView(videoId: string, request: Request, env: E
 
 	try {
 		await env.DB.prepare(`INSERT INTO views (user_id, video_id) VALUES (?, ?)`).bind(body.user_id, videoId).run();
+		await env.DB.prepare(`UPDATE videos SET views_count = views_count + 1 WHERE id = ?`).bind(videoId).run();
 		return Response.json({ message: 'view recorded' }, { headers: CORS });
 	} catch {
 		// Already viewed by this user before — don't count again
@@ -140,6 +154,8 @@ export async function handleAddComment(videoId: string, request: Request, env: E
 	await env.DB.prepare(`INSERT INTO comments (id, user_id, video_id, text) VALUES (?, ?, ?, ?)`)
 		.bind(id, body.user_id, videoId, body.text.trim())
 		.run();
+
+	await env.DB.prepare(`UPDATE videos SET comments_count = comments_count + 1 WHERE id = ?`).bind(videoId).run();
 
 	return Response.json({ id, message: 'comment added' }, { headers: CORS });
 }
