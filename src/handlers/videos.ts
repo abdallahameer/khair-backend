@@ -1,14 +1,26 @@
 import { Env, CORS } from '../types';
 
 // Main feed — all approved videos
-export async function handleGetApprovedVideos(env: Env): Promise<Response> {
+export async function handleGetApprovedVideos(env: Env, userId?: string): Promise<Response> {
 	const result = await env.DB.prepare(
-		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username
+		`SELECT 
+       videos.id, 
+       videos.video_url, 
+       videos.uploaded_at, 
+       users.id as user_id, 
+       users.username,
+       (SELECT COUNT(*) FROM likes WHERE likes.video_id = videos.id) as likes_count,
+       (SELECT COUNT(*) FROM views WHERE views.video_id = videos.id) as views_count,
+       (SELECT COUNT(*) FROM comments WHERE comments.video_id = videos.id) as comments_count,
+       ${userId ? `(SELECT COUNT(*) FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,` : '0 as is_liked,'}
+       ${userId ? `(SELECT COUNT(*) FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved` : '0 as is_saved'}
      FROM videos
      JOIN users ON videos.user_id = users.id
      WHERE videos.status = 'approved'
      ORDER BY videos.uploaded_at DESC`,
-	).all();
+	)
+		.bind(...(userId ? [userId, userId] : []))
+		.all();
 
 	return Response.json(result.results, { headers: CORS });
 }
