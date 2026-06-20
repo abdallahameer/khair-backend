@@ -52,29 +52,6 @@ export default {
 			return handleRejectVideo(id, env);
 		}
 
-		// ─── Auth ─────────────────────────────────────────────────
-		if (url.pathname === '/api/auth/reviewer-login' && request.method === 'POST') {
-			return handleReviewerLogin(request, env);
-		}
-
-		if (url.pathname === '/api/users/register' && request.method === 'POST') {
-			return handleUserRegister(request, env);
-		}
-
-		if (url.pathname === '/api/users/login' && request.method === 'POST') {
-			return handleUserLogin(request, env);
-		}
-
-		// ─── User profiles ─────────────────────────────────────────
-		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
-			const userId = url.pathname.split('/api/users/')[1];
-			return handleGetUserProfile(userId, env);
-		}
-
-		if (url.pathname === '/api/users/upload-profile-image' && request.method === 'POST') {
-			return handleUploadProfileImage(request, env);
-		}
-
 		// ─── Likes ────────────────────────────────────────────────
 		if (url.pathname.match(/^\/api\/videos\/[^/]+\/like$/) && request.method === 'POST') {
 			const videoId = url.pathname.split('/')[3];
@@ -91,11 +68,6 @@ export default {
 			return handleGetVideoLikes(videoId, env);
 		}
 
-		if (url.pathname.match(/^\/api\/users\/[^/]+\/liked-videos$/) && request.method === 'GET') {
-			const userId = url.pathname.split('/')[3];
-			return handleGetUserLikedVideos(userId, env);
-		}
-
 		// ─── Saves ────────────────────────────────────────────────
 		if (url.pathname.match(/^\/api\/videos\/[^/]+\/save$/) && request.method === 'POST') {
 			const videoId = url.pathname.split('/')[3];
@@ -105,11 +77,6 @@ export default {
 		if (url.pathname.match(/^\/api\/videos\/[^/]+\/save$/) && request.method === 'DELETE') {
 			const videoId = url.pathname.split('/')[3];
 			return handleUnsaveVideo(videoId, request, env);
-		}
-
-		if (url.pathname.match(/^\/api\/users\/[^/]+\/saved-videos$/) && request.method === 'GET') {
-			const userId = url.pathname.split('/')[3];
-			return handleGetUserSavedVideos(userId, env);
 		}
 
 		// ─── Views ────────────────────────────────────────────────
@@ -127,6 +94,41 @@ export default {
 		if (url.pathname.match(/^\/api\/videos\/[^/]+\/comments$/) && request.method === 'GET') {
 			const videoId = url.pathname.split('/')[3];
 			return handleGetComments(videoId, env);
+		}
+
+		// ─── Auth ─────────────────────────────────────────────────
+		if (url.pathname === '/api/auth/reviewer-login' && request.method === 'POST') {
+			return handleReviewerLogin(request, env);
+		}
+
+		if (url.pathname === '/api/users/register' && request.method === 'POST') {
+			return handleUserRegister(request, env);
+		}
+
+		if (url.pathname === '/api/users/login' && request.method === 'POST') {
+			return handleUserLogin(request, env);
+		}
+
+		if (url.pathname === '/api/users/upload-profile-image' && request.method === 'POST') {
+			return handleUploadProfileImage(request, env);
+		}
+
+		// ─── User profiles ─────────────────────────────────────────
+		// These specific routes MUST come before the general /api/users/:id route
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/liked-videos$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			return handleGetUserLikedVideos(userId, env);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/saved-videos$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			return handleGetUserSavedVideos(userId, env);
+		}
+
+		// General profile route — must come LAST among /api/users/ GET routes
+		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
+			const userId = url.pathname.split('/api/users/')[1];
+			return handleGetUserProfile(userId, env);
 		}
 
 		if (url.pathname === '/healthz') {
