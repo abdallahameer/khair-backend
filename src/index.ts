@@ -6,6 +6,7 @@ import {
 	handleUploadVideo,
 	handleApproveVideo,
 	handleRejectVideo,
+	handleGetVideoById, // ← add this
 } from './handlers/videos';
 import {
 	handleLikeVideo,
@@ -29,6 +30,7 @@ export default {
 		}
 
 		// ─── Videos ───────────────────────────────────────────────
+
 		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
 			const userId = url.searchParams.get('user_id') ?? undefined;
 			return handleGetApprovedVideos(env, userId);
@@ -36,6 +38,13 @@ export default {
 
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
 			return handleGetPendingVideos(env);
+		}
+
+		// Must come before other /api/videos/ routes
+		if (url.pathname.match(/^\/api\/videos\/[^/]+$/) && request.method === 'GET') {
+			const videoId = url.pathname.split('/')[3];
+			const viewerId = url.searchParams.get('viewer_id') ?? undefined;
+			return handleGetVideoById(videoId, env, viewerId);
 		}
 
 		if (url.pathname === '/api/videos/upload' && request.method === 'POST') {
