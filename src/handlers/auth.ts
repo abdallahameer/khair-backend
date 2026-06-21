@@ -63,18 +63,33 @@ export async function handleUserLogin(request: Request, env: Env): Promise<Respo
 }
 
 // Get user profile + their approved videos
-export async function handleGetUserProfile(userId: string, env: Env): Promise<Response> {
+export async function handleGetUserProfile(userId: string, env: Env, viewerId?: string): Promise<Response> {
 	const user = await env.DB.prepare(`SELECT id, username, created_at, profile_image FROM users WHERE id = ?`).bind(userId).first();
 
 	if (!user) {
 		return Response.json({ error: 'User not found' }, { status: 404, headers: CORS });
 	}
 
-	const videos = await env.DB.prepare(
-		`SELECT id, video_url, uploaded_at FROM videos WHERE user_id = ? AND status = 'approved' ORDER BY uploaded_at DESC`,
-	)
-		.bind(userId)
-		.all();
+	const query = viewerId
+		? `SELECT 
+        id, video_url, uploaded_at,
+        likes_count, comments_count, views_count, saves_count,
+        EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
+        EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
+       FROM videos 
+       WHERE user_id = ? AND status = 'approved' 
+       ORDER BY uploaded_at DESC`
+		: `SELECT 
+        id, video_url, uploaded_at,
+        likes_count, comments_count, views_count, saves_count,
+        0 as is_liked, 0 as is_saved
+       FROM videos 
+       WHERE user_id = ? AND status = 'approved' 
+       ORDER BY uploaded_at DESC`;
+
+	const stmt = viewerId ? env.DB.prepare(query).bind(viewerId, viewerId, userId) : env.DB.prepare(query).bind(userId);
+
+	const videos = await stmt.all();
 
 	return Response.json({ user, videos: videos.results }, { headers: CORS });
 }

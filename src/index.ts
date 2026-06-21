@@ -128,7 +128,8 @@ export default {
 		// General profile route — must come LAST among /api/users/ GET routes
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
-			return handleGetUserProfile(userId, env);
+			const viewerId = url.searchParams.get('viewer_id') ?? undefined;
+			return handleGetUserProfile(userId, env, viewerId);
 		}
 
 		if (url.pathname === '/healthz') {
