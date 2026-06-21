@@ -124,3 +124,34 @@ export async function handleRejectVideo(id: string, env: Env): Promise<Response>
 
 	return Response.json({ message: 'rejected' }, { headers: CORS });
 }
+
+export async function handleGetVideoById(videoId: string, env: Env, viewerId?: string): Promise<Response> {
+	const query = viewerId
+		? `SELECT 
+         videos.id, videos.video_url, videos.uploaded_at,
+         videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
+         users.id as user_id, users.username, users.profile_image,
+         EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
+         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
+       FROM videos
+       JOIN users ON videos.user_id = users.id
+       WHERE videos.id = ? AND videos.status = 'approved'`
+		: `SELECT 
+         videos.id, videos.video_url, videos.uploaded_at,
+         videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
+         users.id as user_id, users.username, users.profile_image,
+         0 as is_liked, 0 as is_saved
+       FROM videos
+       JOIN users ON videos.user_id = users.id
+       WHERE videos.id = ? AND videos.status = 'approved'`;
+
+	const stmt = viewerId ? env.DB.prepare(query).bind(viewerId, viewerId, videoId) : env.DB.prepare(query).bind(videoId);
+
+	const video = await stmt.first();
+
+	if (!video) {
+		return Response.json({ error: 'Video not found' }, { status: 404, headers: CORS });
+	}
+
+	return Response.json(video, { headers: CORS });
+}
