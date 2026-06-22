@@ -6,7 +6,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string): Promis
 		? `SELECT 
          videos.id, videos.video_url, videos.uploaded_at, 
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
-         users.id as user_id, users.username,
+         users.id as user_id, users.username, users.profile_image,
          EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
          EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
        FROM videos
@@ -16,7 +16,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string): Promis
 		: `SELECT 
          videos.id, videos.video_url, videos.uploaded_at,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
-         users.id as user_id, users.username,
+         users.id as user_id, users.username, users.profile_image,
          0 as is_liked, 0 as is_saved
        FROM videos
        JOIN users ON videos.user_id = users.id
