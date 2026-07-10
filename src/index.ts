@@ -33,7 +33,9 @@ export default {
 
 		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
 			const userId = url.searchParams.get('user_id') ?? undefined;
-			return handleGetApprovedVideos(env, userId);
+			const cursor = url.searchParams.get('cursor') ?? undefined;
+			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
+			return handleGetApprovedVideos(env, userId, cursor, limit);
 		}
 
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
