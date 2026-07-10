@@ -1,7 +1,11 @@
 import { Env, CORS } from '../types';
 
 // Main feed — all approved videos
-export async function handleGetApprovedVideos(env: Env, userId?: string): Promise<Response> {
+export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?: string, limit: number = 10): Promise<Response> {
+	const safeLimit = Math.min(Math.max(limit, 1), 50); // clamp between 1-50
+
+	const cursorClause = cursor ? `AND videos.uploaded_at < ?` : '';
+
 	const query = userId
 		? `SELECT 
          videos.id, videos.video_url, videos.uploaded_at, 
@@ -11,8 +15,9 @@ export async function handleGetApprovedVideos(env: Env, userId?: string): Promis
          EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
        FROM videos
        JOIN users ON videos.user_id = users.id
-       WHERE videos.status = 'approved'
-       ORDER BY videos.uploaded_at DESC`
+       WHERE videos.status = 'approved' ${cursorClause}
+       ORDER BY videos.uploaded_at DESC
+       LIMIT ?`
 		: `SELECT 
          videos.id, videos.video_url, videos.uploaded_at,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
@@ -20,13 +25,30 @@ export async function handleGetApprovedVideos(env: Env, userId?: string): Promis
          0 as is_liked, 0 as is_saved
        FROM videos
        JOIN users ON videos.user_id = users.id
-       WHERE videos.status = 'approved'
-       ORDER BY videos.uploaded_at DESC`;
+       WHERE videos.status = 'approved' ${cursorClause}
+       ORDER BY videos.uploaded_at DESC
+       LIMIT ?`;
 
-	const stmt = userId ? env.DB.prepare(query).bind(userId, userId) : env.DB.prepare(query);
+	let stmt;
+	if (userId && cursor) {
+		stmt = env.DB.prepare(query).bind(userId, userId, cursor, safeLimit + 1);
+	} else if (userId) {
+		stmt = env.DB.prepare(query).bind(userId, userId, safeLimit + 1);
+	} else if (cursor) {
+		stmt = env.DB.prepare(query).bind(cursor, safeLimit + 1);
+	} else {
+		stmt = env.DB.prepare(query).bind(safeLimit + 1);
+	}
+
 	const result = await stmt.all();
+	const rows = result.results as any[];
 
-	return Response.json(result.results, { headers: CORS });
+	// We fetched one extra row to know if there's a next page
+	const hasMore = rows.length > safeLimit;
+	const videos = hasMore ? rows.slice(0, safeLimit) : rows;
+	const nextCursor = hasMore ? videos[videos.length - 1].uploaded_at : null;
+
+	return Response.json({ videos, nextCursor }, { headers: CORS });
 }
 
 export async function handleGetPendingVideos(env: Env): Promise<Response> {
