@@ -50,20 +50,29 @@ export async function handleGetVideoLikes(videoId: string, env: Env): Promise<Re
 	return Response.json(result.results, { headers: CORS });
 }
 
-export async function handleGetUserLikedVideos(userId: string, env: Env): Promise<Response> {
-	const result = await env.DB.prepare(
-		`SELECT videos.id, videos.video_url, videos.uploaded_at, videos.likes_count, videos.comments_count, videos.views_count,
-            users.id as user_id, users.username
+export async function handleGetUserLikedVideos(userId: string, env: Env, cursor?: string, limit: number = 10): Promise<Response> {
+	const safeLimit = Math.min(Math.max(limit, 1), 50);
+	const cursorClause = cursor ? `AND likes.created_at < ?` : '';
+
+	const query = `SELECT videos.id, videos.video_url, videos.uploaded_at, videos.likes_count, videos.comments_count, videos.views_count,
+            users.id as user_id, users.username, likes.created_at as liked_at
      FROM likes
      JOIN videos ON likes.video_id = videos.id
      JOIN users ON videos.user_id = users.id
-     WHERE likes.user_id = ?
-     ORDER BY likes.created_at DESC`,
-	)
-		.bind(userId)
-		.all();
+     WHERE likes.user_id = ? ${cursorClause}
+     ORDER BY likes.created_at DESC
+     LIMIT ?`;
 
-	return Response.json(result.results, { headers: CORS });
+	const stmt = cursor ? env.DB.prepare(query).bind(userId, cursor, safeLimit + 1) : env.DB.prepare(query).bind(userId, safeLimit + 1);
+
+	const result = await stmt.all();
+	const rows = result.results as any[];
+
+	const hasMore = rows.length > safeLimit;
+	const videos = hasMore ? rows.slice(0, safeLimit) : rows;
+	const nextCursor = hasMore ? (videos[videos.length - 1] as any).liked_at : null;
+
+	return Response.json({ videos, nextCursor }, { headers: CORS });
 }
 
 // ─── Saves ──────────────────────────────────────────────────────────────────
@@ -101,20 +110,29 @@ export async function handleUnsaveVideo(videoId: string, request: Request, env: 
 	return Response.json({ message: 'unsaved' }, { headers: CORS });
 }
 
-export async function handleGetUserSavedVideos(userId: string, env: Env): Promise<Response> {
-	const result = await env.DB.prepare(
-		`SELECT videos.id, videos.video_url, videos.uploaded_at, videos.likes_count, videos.comments_count, videos.views_count,
-            users.id as user_id, users.username
+export async function handleGetUserSavedVideos(userId: string, env: Env, cursor?: string, limit: number = 10): Promise<Response> {
+	const safeLimit = Math.min(Math.max(limit, 1), 50);
+	const cursorClause = cursor ? `AND saves.created_at < ?` : '';
+
+	const query = `SELECT videos.id, videos.video_url, videos.uploaded_at, videos.likes_count, videos.comments_count, videos.views_count,
+            users.id as user_id, users.username, saves.created_at as saved_at
      FROM saves
      JOIN videos ON saves.video_id = videos.id
      JOIN users ON videos.user_id = users.id
-     WHERE saves.user_id = ?
-     ORDER BY saves.created_at DESC`,
-	)
-		.bind(userId)
-		.all();
+     WHERE saves.user_id = ? ${cursorClause}
+     ORDER BY saves.created_at DESC
+     LIMIT ?`;
 
-	return Response.json(result.results, { headers: CORS });
+	const stmt = cursor ? env.DB.prepare(query).bind(userId, cursor, safeLimit + 1) : env.DB.prepare(query).bind(userId, safeLimit + 1);
+
+	const result = await stmt.all();
+	const rows = result.results as any[];
+
+	const hasMore = rows.length > safeLimit;
+	const videos = hasMore ? rows.slice(0, safeLimit) : rows;
+	const nextCursor = hasMore ? (videos[videos.length - 1] as any).saved_at : null;
+
+	return Response.json({ videos, nextCursor }, { headers: CORS });
 }
 
 // ─── Views ──────────────────────────────────────────────────────────────────
