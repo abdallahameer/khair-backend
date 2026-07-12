@@ -1,12 +1,19 @@
 import { Env, CORS } from './types';
-import { handleReviewerLogin, handleUserLogin, handleUserRegister, handleGetUserProfile, handleUploadProfileImage } from './handlers/auth';
+import {
+	handleReviewerLogin,
+	handleUserLogin,
+	handleUserRegister,
+	handleGetUserProfile,
+	handleGetUserVideos,
+	handleUploadProfileImage,
+} from './handlers/auth';
 import {
 	handleGetApprovedVideos,
 	handleGetPendingVideos,
 	handleUploadVideo,
 	handleApproveVideo,
 	handleRejectVideo,
-	handleGetVideoById, // ← add this
+	handleGetVideoById,
 } from './handlers/videos';
 import {
 	handleLikeVideo,
@@ -126,21 +133,33 @@ export default {
 
 		// ─── User profiles ─────────────────────────────────────────
 		// These specific routes MUST come before the general /api/users/:id route
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/videos$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			const viewerId = url.searchParams.get('viewer_id') ?? undefined;
+			const cursor = url.searchParams.get('cursor') ?? undefined;
+			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
+			return handleGetUserVideos(userId, env, viewerId, cursor, limit);
+		}
+
 		if (url.pathname.match(/^\/api\/users\/[^/]+\/liked-videos$/) && request.method === 'GET') {
 			const userId = url.pathname.split('/')[3];
-			return handleGetUserLikedVideos(userId, env);
+			const cursor = url.searchParams.get('cursor') ?? undefined;
+			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
+			return handleGetUserLikedVideos(userId, env, cursor, limit);
 		}
 
 		if (url.pathname.match(/^\/api\/users\/[^/]+\/saved-videos$/) && request.method === 'GET') {
 			const userId = url.pathname.split('/')[3];
-			return handleGetUserSavedVideos(userId, env);
+			const cursor = url.searchParams.get('cursor') ?? undefined;
+			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
+			return handleGetUserSavedVideos(userId, env, cursor, limit);
 		}
 
-		// General profile route — must come LAST among /api/users/ GET routes
+		// General profile route — now just user info, must stay LAST among /api/users/ GET routes
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
-			const viewerId = url.searchParams.get('viewer_id') ?? undefined;
-			return handleGetUserProfile(userId, env, viewerId);
+			return handleGetUserProfile(userId, env);
 		}
 
 		if (url.pathname === '/healthz') {

@@ -62,13 +62,27 @@ export async function handleUserLogin(request: Request, env: Env): Promise<Respo
 	return Response.json({ id: user.id, username: user.username }, { headers: CORS });
 }
 
-// Get user profile + their approved videos
-export async function handleGetUserProfile(userId: string, env: Env, viewerId?: string): Promise<Response> {
+// Just the user's basic info — no videos
+export async function handleGetUserProfile(userId: string, env: Env): Promise<Response> {
 	const user = await env.DB.prepare(`SELECT id, username, created_at, profile_image FROM users WHERE id = ?`).bind(userId).first();
 
 	if (!user) {
 		return Response.json({ error: 'User not found' }, { status: 404, headers: CORS });
 	}
+
+	return Response.json({ user }, { headers: CORS });
+}
+
+// Paginated list of this user's own uploaded (approved) videos
+export async function handleGetUserVideos(
+	userId: string,
+	env: Env,
+	viewerId?: string,
+	cursor?: string,
+	limit: number = 10,
+): Promise<Response> {
+	const safeLimit = Math.min(Math.max(limit, 1), 50);
+	const cursorClause = cursor ? `AND uploaded_at < ?` : '';
 
 	const query = viewerId
 		? `SELECT 
@@ -77,21 +91,37 @@ export async function handleGetUserProfile(userId: string, env: Env, viewerId?: 
         EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
        FROM videos 
-       WHERE user_id = ? AND status = 'approved' 
-       ORDER BY uploaded_at DESC`
+       WHERE user_id = ? AND status = 'approved' ${cursorClause}
+       ORDER BY uploaded_at DESC
+       LIMIT ?`
 		: `SELECT 
         id, video_url, uploaded_at,
         likes_count, comments_count, views_count, saves_count,
         0 as is_liked, 0 as is_saved
        FROM videos 
-       WHERE user_id = ? AND status = 'approved' 
-       ORDER BY uploaded_at DESC`;
+       WHERE user_id = ? AND status = 'approved' ${cursorClause}
+       ORDER BY uploaded_at DESC
+       LIMIT ?`;
 
-	const stmt = viewerId ? env.DB.prepare(query).bind(viewerId, viewerId, userId) : env.DB.prepare(query).bind(userId);
+	let stmt;
+	if (viewerId && cursor) {
+		stmt = env.DB.prepare(query).bind(viewerId, viewerId, userId, cursor, safeLimit + 1);
+	} else if (viewerId) {
+		stmt = env.DB.prepare(query).bind(viewerId, viewerId, userId, safeLimit + 1);
+	} else if (cursor) {
+		stmt = env.DB.prepare(query).bind(userId, cursor, safeLimit + 1);
+	} else {
+		stmt = env.DB.prepare(query).bind(userId, safeLimit + 1);
+	}
 
-	const videos = await stmt.all();
+	const result = await stmt.all();
+	const rows = result.results as any[];
 
-	return Response.json({ user, videos: videos.results }, { headers: CORS });
+	const hasMore = rows.length > safeLimit;
+	const videos = hasMore ? rows.slice(0, safeLimit) : rows;
+	const nextCursor = hasMore ? videos[videos.length - 1].uploaded_at : null;
+
+	return Response.json({ videos, nextCursor }, { headers: CORS });
 }
 
 // Upload profile image
