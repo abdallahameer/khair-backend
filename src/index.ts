@@ -27,6 +27,7 @@ import {
 	handleAddComment,
 	handleGetComments,
 } from './handlers/engagement';
+import { handleStartConversation, handleGetConversations, handleGetMessages, handleSendMessage } from './handlers/messaging';
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -160,6 +161,32 @@ export default {
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
 			return handleGetUserProfile(userId, env);
+		}
+
+		// ─── Messaging ────────────────────────────────────────────────
+
+		if (url.pathname === '/api/conversations' && request.method === 'POST') {
+			return handleStartConversation(request, env);
+		}
+
+		if (url.pathname === '/api/conversations' && request.method === 'GET') {
+			const userId = url.searchParams.get('user_id');
+			if (!userId) {
+				return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+			}
+			return handleGetConversations(userId, env);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/messages$/) && request.method === 'GET') {
+			const conversationId = url.pathname.split('/')[3];
+			const cursor = url.searchParams.get('cursor') ?? undefined;
+			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 20;
+			return handleGetMessages(conversationId, env, cursor, limit);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/messages$/) && request.method === 'POST') {
+			const conversationId = url.pathname.split('/')[3];
+			return handleSendMessage(conversationId, request, env);
 		}
 
 		if (url.pathname === '/healthz') {
