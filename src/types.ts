@@ -4,6 +4,7 @@ export interface Env {
 	IMAGES_BUCKET: R2Bucket;
 	R2_PUBLIC_URL: string;
 	R2_PUBLIC_URL_IMAGES: string;
+	CONVERSATION_ROOM: DurableObjectNamespace;
 }
 
 export const CORS = {
