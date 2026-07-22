@@ -28,7 +28,9 @@ import {
 	handleGetComments,
 } from './handlers/engagement';
 import { handleStartConversation, handleGetConversations, handleGetMessages, handleSendMessage } from './handlers/messaging';
+import { ConversationRoom } from './durable-objects/ConversationRoom';
 
+export { ConversationRoom };
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
@@ -187,6 +189,13 @@ export default {
 		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/messages$/) && request.method === 'POST') {
 			const conversationId = url.pathname.split('/')[3];
 			return handleSendMessage(conversationId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/ws$/) && request.method === 'GET') {
+			const conversationId = url.pathname.split('/')[3];
+			const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
+			const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+			return stub.fetch(request);
 		}
 
 		if (url.pathname === '/healthz') {

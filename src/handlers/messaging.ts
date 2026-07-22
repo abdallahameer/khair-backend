@@ -92,7 +92,6 @@ export async function handleSendMessage(conversationId: string, request: Request
 		return Response.json({ error: 'Message cannot be empty' }, { status: 400, headers: CORS });
 	}
 
-	// Confirm the conversation exists and the sender is actually a participant
 	const conversation = await env.DB.prepare(`SELECT user_one_id, user_two_id FROM conversations WHERE id = ?`)
 		.bind(conversationId)
 		.first<{ user_one_id: string; user_two_id: string }>();
@@ -117,8 +116,15 @@ export async function handleSendMessage(conversationId: string, request: Request
 		.bind(createdAt, trimmedText, conversationId)
 		.run();
 
-	return Response.json(
-		{ id, conversation_id: conversationId, sender_id: body.sender_id, text: trimmedText, created_at: createdAt },
-		{ headers: CORS },
-	);
+	const message = { id, conversation_id: conversationId, sender_id: body.sender_id, text: trimmedText, created_at: createdAt };
+
+	// Notify the Durable Object so any connected WebSocket clients get this instantly
+	const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
+	const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+	await stub.fetch('https://internal/broadcast', {
+		method: 'POST',
+		body: JSON.stringify(message),
+	});
+
+	return Response.json(message, { headers: CORS });
 }
