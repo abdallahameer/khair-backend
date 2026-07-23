@@ -128,3 +128,66 @@ export async function handleSendMessage(conversationId: string, request: Request
 
 	return Response.json(message, { headers: CORS });
 }
+
+// Look up an existing conversation between two users, WITHOUT creating one
+export async function handleFindConversation(userId: string, otherUserId: string, env: Env): Promise<Response> {
+	const [userOneId, userTwoId] = [userId, otherUserId].sort();
+
+	const existing = await env.DB.prepare(`SELECT id FROM conversations WHERE user_one_id = ? AND user_two_id = ?`)
+		.bind(userOneId, userTwoId)
+		.first<{ id: string }>();
+
+	return Response.json({ id: existing?.id ?? null }, { headers: CORS });
+}
+
+// Send a message addressed by the two participants — creates the conversation on first send only
+export async function handleSendMessageToUser(request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { sender_id: string; other_user_id: string; text: string };
+
+	if (!body.sender_id || !body.other_user_id || !body.text) {
+		return Response.json({ error: 'sender_id, other_user_id, and text are required' }, { status: 400, headers: CORS });
+	}
+
+	if (body.text.trim().length === 0) {
+		return Response.json({ error: 'Message cannot be empty' }, { status: 400, headers: CORS });
+	}
+
+	const [userOneId, userTwoId] = [body.sender_id, body.other_user_id].sort();
+
+	let conversationId: string;
+	const existing = await env.DB.prepare(`SELECT id FROM conversations WHERE user_one_id = ? AND user_two_id = ?`)
+		.bind(userOneId, userTwoId)
+		.first<{ id: string }>();
+
+	if (existing) {
+		conversationId = existing.id;
+	} else {
+		conversationId = crypto.randomUUID();
+		await env.DB.prepare(`INSERT INTO conversations (id, user_one_id, user_two_id, created_at) VALUES (?, ?, ?, ?)`)
+			.bind(conversationId, userOneId, userTwoId, new Date().toISOString())
+			.run();
+	}
+
+	const id = crypto.randomUUID();
+	const createdAt = new Date().toISOString();
+	const trimmedText = body.text.trim();
+
+	await env.DB.prepare(`INSERT INTO messages (id, conversation_id, sender_id, text, created_at) VALUES (?, ?, ?, ?, ?)`)
+		.bind(id, conversationId, body.sender_id, trimmedText, createdAt)
+		.run();
+
+	await env.DB.prepare(`UPDATE conversations SET last_message_at = ?, last_message_text = ? WHERE id = ?`)
+		.bind(createdAt, trimmedText, conversationId)
+		.run();
+
+	const message = { id, conversation_id: conversationId, sender_id: body.sender_id, text: trimmedText, created_at: createdAt };
+
+	const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
+	const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+	await stub.fetch('https://internal/broadcast', {
+		method: 'POST',
+		body: JSON.stringify(message),
+	});
+
+	return Response.json({ ...message, conversation_id: conversationId }, { headers: CORS });
+}

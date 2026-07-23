@@ -27,7 +27,14 @@ import {
 	handleAddComment,
 	handleGetComments,
 } from './handlers/engagement';
-import { handleStartConversation, handleGetConversations, handleGetMessages, handleSendMessage } from './handlers/messaging';
+import {
+	handleStartConversation,
+	handleGetConversations,
+	handleGetMessages,
+	handleSendMessage,
+	handleFindConversation,
+	handleSendMessageToUser,
+} from './handlers/messaging';
 import { ConversationRoom } from './durable-objects/ConversationRoom';
 
 export { ConversationRoom };
@@ -196,6 +203,19 @@ export default {
 			const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
 			const stub = env.CONVERSATION_ROOM.get(durableObjectId);
 			return stub.fetch(request);
+		}
+
+		if (url.pathname === '/api/conversations/find' && request.method === 'GET') {
+			const userId = url.searchParams.get('user_id');
+			const otherUserId = url.searchParams.get('other_user_id');
+			if (!userId || !otherUserId) {
+				return Response.json({ error: 'user_id and other_user_id are required' }, { status: 400, headers: CORS });
+			}
+			return handleFindConversation(userId, otherUserId, env);
+		}
+
+		if (url.pathname === '/api/messages' && request.method === 'POST') {
+			return handleSendMessageToUser(request, env);
 		}
 
 		if (url.pathname === '/healthz') {
