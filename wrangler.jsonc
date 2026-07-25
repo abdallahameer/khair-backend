@@ -31,12 +31,21 @@
 				"class_name": "ConversationRoom",
 				"script_name": "my-worker",
 			},
+			{
+				"name": "USER_INBOX",
+				"class_name": "UserInbox",
+				"script_name": "my-worker",
+			},
 		],
 	},
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["ConversationRoom"],
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["UserInbox"],
 		},
 	],
 }

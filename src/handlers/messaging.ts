@@ -12,10 +12,8 @@ export async function handleStartConversation(request: Request, env: Env): Promi
 		return Response.json({ error: 'Cannot start a conversation with yourself' }, { status: 400, headers: CORS });
 	}
 
-	// Always store the lexicographically smaller id as user_one_id, to avoid duplicate conversations
 	const [userOneId, userTwoId] = [body.user_id, body.other_user_id].sort();
 
-	// Check if a conversation already exists between these two users
 	const existing = await env.DB.prepare(`SELECT id FROM conversations WHERE user_one_id = ? AND user_two_id = ?`)
 		.bind(userOneId, userTwoId)
 		.first<{ id: string }>();
@@ -34,7 +32,6 @@ export async function handleStartConversation(request: Request, env: Env): Promi
 	return Response.json({ id }, { headers: CORS });
 }
 
-// List all of a user's conversations — NOT paginated, per spec
 export async function handleGetConversations(userId: string, env: Env): Promise<Response> {
 	const result = await env.DB.prepare(
 		`SELECT 
@@ -62,7 +59,6 @@ export async function handleGetConversations(userId: string, env: Env): Promise<
 	return Response.json(result.results, { headers: CORS });
 }
 
-// Paginated message history for one conversation
 export async function handleGetMessages(conversationId: string, env: Env, cursor?: string, limit: number = 20): Promise<Response> {
 	const safeLimit = Math.min(Math.max(limit, 1), 50);
 	const cursorClause = cursor ? `AND created_at < ?` : '';
@@ -87,7 +83,6 @@ export async function handleGetMessages(conversationId: string, env: Env, cursor
 	return Response.json({ messages, nextCursor }, { headers: CORS });
 }
 
-// Send a message — writes to D1 (Stage 3 will also notify the Durable Object from here)
 export async function handleSendMessage(conversationId: string, request: Request, env: Env): Promise<Response> {
 	const body = (await request.json()) as { sender_id: string; text: string };
 
@@ -133,10 +128,16 @@ export async function handleSendMessage(conversationId: string, request: Request
 		body: JSON.stringify(message),
 	});
 
+	// Notify both participants' inboxes so their conversation lists refresh live
+	for (const participantId of [conversation.user_one_id, conversation.user_two_id]) {
+		const inboxId = env.USER_INBOX.idFromName(participantId);
+		const inboxStub = env.USER_INBOX.get(inboxId);
+		await inboxStub.fetch('https://internal/notify', { method: 'POST' });
+	}
+
 	return Response.json(message, { headers: CORS });
 }
 
-// Look up an existing conversation between two users, WITHOUT creating one
 export async function handleFindConversation(userId: string, otherUserId: string, env: Env): Promise<Response> {
 	const [userOneId, userTwoId] = [userId, otherUserId].sort();
 
@@ -147,7 +148,6 @@ export async function handleFindConversation(userId: string, otherUserId: string
 	return Response.json({ id: existing?.id ?? null }, { headers: CORS });
 }
 
-// Send a message addressed by the two participants — creates the conversation on first send only
 export async function handleSendMessageToUser(request: Request, env: Env): Promise<Response> {
 	const body = (await request.json()) as { sender_id: string; other_user_id: string; text: string };
 
@@ -196,10 +196,16 @@ export async function handleSendMessageToUser(request: Request, env: Env): Promi
 		body: JSON.stringify(message),
 	});
 
+	// Notify both participants' inboxes so their conversation lists refresh live
+	for (const participantId of [userOneId, userTwoId]) {
+		const inboxId = env.USER_INBOX.idFromName(participantId);
+		const inboxStub = env.USER_INBOX.get(inboxId);
+		await inboxStub.fetch('https://internal/notify', { method: 'POST' });
+	}
+
 	return Response.json({ ...message, conversation_id: conversationId }, { headers: CORS });
 }
 
-// Mark a conversation as read for one participant
 export async function handleMarkConversationRead(conversationId: string, request: Request, env: Env): Promise<Response> {
 	const body = (await request.json()) as { user_id: string };
 
