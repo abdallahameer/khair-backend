@@ -43,13 +43,20 @@ export async function handleGetConversations(userId: string, env: Env): Promise<
        conversations.last_message_text,
        CASE WHEN conversations.user_one_id = ? THEN conversations.user_two_id ELSE conversations.user_one_id END as other_user_id,
        users.username as other_username,
-       users.profile_image as other_profile_image
+       users.profile_image as other_profile_image,
+       CASE 
+         WHEN conversations.last_message_at IS NULL THEN 0
+         WHEN (SELECT sender_id FROM messages WHERE messages.conversation_id = conversations.id ORDER BY created_at DESC LIMIT 1) = ? THEN 0
+         WHEN conversations.user_one_id = ? AND (conversations.user_one_last_read_at IS NULL OR conversations.last_message_at > conversations.user_one_last_read_at) THEN 1
+         WHEN conversations.user_two_id = ? AND (conversations.user_two_last_read_at IS NULL OR conversations.last_message_at > conversations.user_two_last_read_at) THEN 1
+         ELSE 0
+       END as has_unread
      FROM conversations
      JOIN users ON users.id = CASE WHEN conversations.user_one_id = ? THEN conversations.user_two_id ELSE conversations.user_one_id END
      WHERE conversations.user_one_id = ? OR conversations.user_two_id = ?
      ORDER BY conversations.last_message_at DESC`,
 	)
-		.bind(userId, userId, userId, userId)
+		.bind(userId, userId, userId, userId, userId, userId, userId)
 		.all();
 
 	return Response.json(result.results, { headers: CORS });
@@ -190,4 +197,32 @@ export async function handleSendMessageToUser(request: Request, env: Env): Promi
 	});
 
 	return Response.json({ ...message, conversation_id: conversationId }, { headers: CORS });
+}
+
+// Mark a conversation as read for one participant
+export async function handleMarkConversationRead(conversationId: string, request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { user_id: string };
+
+	if (!body.user_id) {
+		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+	}
+
+	const conversation = await env.DB.prepare(`SELECT user_one_id, user_two_id FROM conversations WHERE id = ?`)
+		.bind(conversationId)
+		.first<{ user_one_id: string; user_two_id: string }>();
+
+	if (!conversation) {
+		return Response.json({ error: 'Conversation not found' }, { status: 404, headers: CORS });
+	}
+
+	const now = new Date().toISOString();
+	const column = conversation.user_one_id === body.user_id ? 'user_one_last_read_at' : 'user_two_last_read_at';
+
+	if (conversation.user_one_id !== body.user_id && conversation.user_two_id !== body.user_id) {
+		return Response.json({ error: 'You are not a participant in this conversation' }, { status: 403, headers: CORS });
+	}
+
+	await env.DB.prepare(`UPDATE conversations SET ${column} = ? WHERE id = ?`).bind(now, conversationId).run();
+
+	return Response.json({ message: 'marked as read' }, { headers: CORS });
 }

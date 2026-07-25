@@ -34,6 +34,7 @@ import {
 	handleSendMessage,
 	handleFindConversation,
 	handleSendMessageToUser,
+	handleMarkConversationRead,
 } from './handlers/messaging';
 import { ConversationRoom } from './durable-objects/ConversationRoom';
 
@@ -216,6 +217,11 @@ export default {
 
 		if (url.pathname === '/api/messages' && request.method === 'POST') {
 			return handleSendMessageToUser(request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/read$/) && request.method === 'POST') {
+			const conversationId = url.pathname.split('/')[3];
+			return handleMarkConversationRead(conversationId, request, env);
 		}
 
 		if (url.pathname === '/healthz') {
