@@ -37,8 +37,9 @@ import {
 	handleMarkConversationRead,
 } from './handlers/messaging';
 import { ConversationRoom } from './durable-objects/ConversationRoom';
+import { UserInbox } from './durable-objects/UserInbox';
 
-export { ConversationRoom };
+export { ConversationRoom, UserInbox };
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
@@ -203,6 +204,13 @@ export default {
 			const conversationId = url.pathname.split('/')[3];
 			const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
 			const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+			return stub.fetch(request);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/inbox-ws$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			const durableObjectId = env.USER_INBOX.idFromName(userId);
+			const stub = env.USER_INBOX.get(durableObjectId);
 			return stub.fetch(request);
 		}
 
