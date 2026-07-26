@@ -35,6 +35,9 @@ import {
 	handleFindConversation,
 	handleSendMessageToUser,
 	handleMarkConversationRead,
+	handleDeleteMessage,
+	handleUpdateMessage,
+	handleDeleteConversation,
 } from './handlers/messaging';
 import { ConversationRoom } from './durable-objects/ConversationRoom';
 import { UserInbox } from './durable-objects/UserInbox';
@@ -185,6 +188,25 @@ export default {
 
 		if (url.pathname === '/api/conversations' && request.method === 'POST') {
 			return handleStartConversation(request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/messages\/[^/]+$/) && request.method === 'DELETE') {
+			const parts = url.pathname.split('/');
+			const conversationId = parts[3];
+			const messageId = parts[5];
+			return handleDeleteMessage(conversationId, messageId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+\/messages\/[^/]+$/) && request.method === 'PATCH') {
+			const parts = url.pathname.split('/');
+			const conversationId = parts[3];
+			const messageId = parts[5];
+			return handleUpdateMessage(conversationId, messageId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/conversations\/[^/]+$/) && request.method === 'DELETE') {
+			const conversationId = url.pathname.split('/')[3];
+			return handleDeleteConversation(conversationId, request, env);
 		}
 
 		if (url.pathname === '/api/conversations' && request.method === 'GET') {
