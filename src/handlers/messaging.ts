@@ -232,3 +232,146 @@ export async function handleMarkConversationRead(conversationId: string, request
 
 	return Response.json({ message: 'marked as read' }, { headers: CORS });
 }
+// Delete a single message — only the sender can delete their own message
+export async function handleDeleteMessage(conversationId: string, messageId: string, request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { user_id: string };
+
+	if (!body.user_id) {
+		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+	}
+
+	const message = await env.DB.prepare(`SELECT sender_id FROM messages WHERE id = ? AND conversation_id = ?`)
+		.bind(messageId, conversationId)
+		.first<{ sender_id: string }>();
+
+	if (!message) {
+		return Response.json({ error: 'Message not found' }, { status: 404, headers: CORS });
+	}
+
+	if (message.sender_id !== body.user_id) {
+		return Response.json({ error: 'You can only delete your own messages' }, { status: 403, headers: CORS });
+	}
+
+	await env.DB.prepare(`DELETE FROM messages WHERE id = ?`).bind(messageId).run();
+
+	// Recompute the conversation's last-message preview, since we may have just deleted it
+	const latest = await env.DB.prepare(`SELECT text, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1`)
+		.bind(conversationId)
+		.first<{ text: string; created_at: string }>();
+
+	await env.DB.prepare(`UPDATE conversations SET last_message_text = ?, last_message_at = ? WHERE id = ?`)
+		.bind(latest?.text ?? null, latest?.created_at ?? null, conversationId)
+		.run();
+
+	// Broadcast to anyone currently viewing this conversation
+	const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
+	const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+	await stub.fetch('https://internal/broadcast', {
+		method: 'POST',
+		body: JSON.stringify({ type: 'message_deleted', id: messageId }),
+	});
+
+	// Notify both participants' inboxes, since the last-message preview may have changed
+	const conversation = await env.DB.prepare(`SELECT user_one_id, user_two_id FROM conversations WHERE id = ?`)
+		.bind(conversationId)
+		.first<{ user_one_id: string; user_two_id: string }>();
+
+	if (conversation) {
+		for (const participantId of [conversation.user_one_id, conversation.user_two_id]) {
+			const inboxId = env.USER_INBOX.idFromName(participantId);
+			const inboxStub = env.USER_INBOX.get(inboxId);
+			await inboxStub.fetch('https://internal/notify', { method: 'POST' });
+		}
+	}
+
+	return Response.json({ message: 'deleted' }, { headers: CORS });
+}
+
+// Update (edit) a message — only the sender can edit their own message
+export async function handleUpdateMessage(conversationId: string, messageId: string, request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { user_id: string; text: string };
+
+	if (!body.user_id || !body.text) {
+		return Response.json({ error: 'user_id and text are required' }, { status: 400, headers: CORS });
+	}
+
+	if (body.text.trim().length === 0) {
+		return Response.json({ error: 'Message cannot be empty' }, { status: 400, headers: CORS });
+	}
+
+	const message = await env.DB.prepare(`SELECT sender_id FROM messages WHERE id = ? AND conversation_id = ?`)
+		.bind(messageId, conversationId)
+		.first<{ sender_id: string }>();
+
+	if (!message) {
+		return Response.json({ error: 'Message not found' }, { status: 404, headers: CORS });
+	}
+
+	if (message.sender_id !== body.user_id) {
+		return Response.json({ error: 'You can only edit your own messages' }, { status: 403, headers: CORS });
+	}
+
+	const trimmedText = body.text.trim();
+	const editedAt = new Date().toISOString();
+
+	await env.DB.prepare(`UPDATE messages SET text = ?, edited_at = ? WHERE id = ?`).bind(trimmedText, editedAt, messageId).run();
+
+	// If this was the most recent message, update the conversation's preview too
+	const latest = await env.DB.prepare(`SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1`)
+		.bind(conversationId)
+		.first<{ id: string }>();
+
+	if (latest?.id === messageId) {
+		await env.DB.prepare(`UPDATE conversations SET last_message_text = ? WHERE id = ?`).bind(trimmedText, conversationId).run();
+	}
+
+	const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
+	const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+	await stub.fetch('https://internal/broadcast', {
+		method: 'POST',
+		body: JSON.stringify({ type: 'message_updated', id: messageId, text: trimmedText, edited_at: editedAt }),
+	});
+
+	return Response.json({ id: messageId, text: trimmedText, edited_at: editedAt }, { headers: CORS });
+}
+
+// Delete an entire conversation — hard delete, removes it for both participants
+export async function handleDeleteConversation(conversationId: string, request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { user_id: string };
+
+	if (!body.user_id) {
+		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+	}
+
+	const conversation = await env.DB.prepare(`SELECT user_one_id, user_two_id FROM conversations WHERE id = ?`)
+		.bind(conversationId)
+		.first<{ user_one_id: string; user_two_id: string }>();
+
+	if (!conversation) {
+		return Response.json({ error: 'Conversation not found' }, { status: 404, headers: CORS });
+	}
+
+	if (conversation.user_one_id !== body.user_id && conversation.user_two_id !== body.user_id) {
+		return Response.json({ error: 'You are not a participant in this conversation' }, { status: 403, headers: CORS });
+	}
+
+	await env.DB.prepare(`DELETE FROM messages WHERE conversation_id = ?`).bind(conversationId).run();
+	await env.DB.prepare(`DELETE FROM conversations WHERE id = ?`).bind(conversationId).run();
+
+	// Tell anyone currently viewing this conversation that it's gone
+	const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
+	const stub = env.CONVERSATION_ROOM.get(durableObjectId);
+	await stub.fetch('https://internal/broadcast', {
+		method: 'POST',
+		body: JSON.stringify({ type: 'conversation_deleted' }),
+	});
+
+	// Refresh both participants' inboxes so it disappears from their lists
+	for (const participantId of [conversation.user_one_id, conversation.user_two_id]) {
+		const inboxId = env.USER_INBOX.idFromName(participantId);
+		const inboxStub = env.USER_INBOX.get(inboxId);
+		await inboxStub.fetch('https://internal/notify', { method: 'POST' });
+	}
+
+	return Response.json({ message: 'conversation deleted' }, { headers: CORS });
+}
