@@ -168,6 +168,13 @@ export default {
 			return handleGetUserSavedVideos(userId, env, cursor, limit);
 		}
 
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/inbox-ws$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			const durableObjectId = env.USER_INBOX.idFromName(userId);
+			const stub = env.USER_INBOX.get(durableObjectId);
+			return stub.fetch(request);
+		}
+
 		// General profile route — now just user info, must stay LAST among /api/users/ GET routes
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
@@ -204,13 +211,6 @@ export default {
 			const conversationId = url.pathname.split('/')[3];
 			const durableObjectId = env.CONVERSATION_ROOM.idFromName(conversationId);
 			const stub = env.CONVERSATION_ROOM.get(durableObjectId);
-			return stub.fetch(request);
-		}
-
-		if (url.pathname.match(/^\/api\/users\/[^/]+\/inbox-ws$/) && request.method === 'GET') {
-			const userId = url.pathname.split('/')[3];
-			const durableObjectId = env.USER_INBOX.idFromName(userId);
-			const stub = env.USER_INBOX.get(durableObjectId);
 			return stub.fetch(request);
 		}
 
