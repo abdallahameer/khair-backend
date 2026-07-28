@@ -6,6 +6,7 @@ import {
 	handleGetUserProfile,
 	handleGetUserVideos,
 	handleUploadProfileImage,
+	handleAddEmail,
 } from './handlers/auth';
 import {
 	handleGetApprovedVideos,
@@ -132,6 +133,10 @@ export default {
 		// ─── Auth ─────────────────────────────────────────────────
 		if (url.pathname === '/api/auth/reviewer-login' && request.method === 'POST') {
 			return handleReviewerLogin(request, env);
+		}
+
+		if (url.pathname === '/api/users/add-email' && request.method === 'POST') {
+			return handleAddEmail(request, env);
 		}
 
 		if (url.pathname === '/api/users/register' && request.method === 'POST') {
