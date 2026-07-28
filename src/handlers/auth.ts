@@ -1,5 +1,6 @@
 import { hashPassword, verifyPassword } from '../helpers/password';
 import { Env, CORS } from '../types';
+import { sendEmail } from '../helpers/email';
 
 // Reviewer login (unchanged)
 export async function handleReviewerLogin(request: Request, env: Env): Promise<Response> {
@@ -215,4 +216,75 @@ export async function handleAddEmail(request: Request, env: Env): Promise<Respon
 	await env.DB.prepare(`UPDATE users SET email = ? WHERE id = ?`).bind(body.email.toLowerCase(), body.user_id).run();
 
 	return Response.json({ message: 'email added' }, { headers: CORS });
+}
+
+// Request a password reset — generates a token and emails a reset link
+export async function handleForgotPassword(request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { email: string };
+
+	if (!body.email) {
+		return Response.json({ error: 'Email is required' }, { status: 400, headers: CORS });
+	}
+
+	const user = await env.DB.prepare(`SELECT id, username FROM users WHERE email = ?`)
+		.bind(body.email.toLowerCase())
+		.first<{ id: string; username: string }>();
+
+	// Always return a generic success response, even if no account matches —
+	// this prevents attackers from using this endpoint to discover which emails are registered
+	if (!user) {
+		return Response.json({ message: 'If that email exists, a reset link has been sent.' }, { headers: CORS });
+	}
+
+	const token = crypto.randomUUID();
+	const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes from now
+
+	await env.DB.prepare(`UPDATE users SET reset_token = ?, reset_token_expires_at = ? WHERE id = ?`).bind(token, expiresAt, user.id).run();
+
+	const resetLink = `https://khair.live/reset-password?token=${token}`;
+
+	await sendEmail(
+		env,
+		body.email.toLowerCase(),
+		'Reset your Khair password',
+		`<p>Hi @${user.username},</p>
+		 <p>We received a request to reset your password. Click the link below to choose a new one:</p>
+		 <p><a href="${resetLink}">${resetLink}</a></p>
+		 <p>This link expires in 30 minutes. If you didn't request this, you can safely ignore this email.</p>`,
+	);
+
+	return Response.json({ message: 'If that email exists, a reset link has been sent.' }, { headers: CORS });
+}
+
+// Reset the password using a valid, unexpired token
+export async function handleResetPassword(request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { token: string; password: string };
+
+	if (!body.token || !body.password) {
+		return Response.json({ error: 'Token and new password are required' }, { status: 400, headers: CORS });
+	}
+
+	if (body.password.length < 6) {
+		return Response.json({ error: 'Password must be at least 6 characters' }, { status: 400, headers: CORS });
+	}
+
+	const user = await env.DB.prepare(`SELECT id, reset_token_expires_at FROM users WHERE reset_token = ?`)
+		.bind(body.token)
+		.first<{ id: string; reset_token_expires_at: string | null }>();
+
+	if (!user) {
+		return Response.json({ error: 'Invalid or expired reset link' }, { status: 400, headers: CORS });
+	}
+
+	if (!user.reset_token_expires_at || new Date(user.reset_token_expires_at) < new Date()) {
+		return Response.json({ error: 'This reset link has expired. Please request a new one.' }, { status: 400, headers: CORS });
+	}
+
+	const { hash, salt } = await hashPassword(body.password);
+
+	await env.DB.prepare(`UPDATE users SET password = ?, password_salt = ?, reset_token = NULL, reset_token_expires_at = NULL WHERE id = ?`)
+		.bind(hash, salt, user.id)
+		.run();
+
+	return Response.json({ message: 'Password has been reset successfully' }, { headers: CORS });
 }
