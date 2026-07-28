@@ -7,6 +7,8 @@ import {
 	handleGetUserVideos,
 	handleUploadProfileImage,
 	handleAddEmail,
+	handleForgotPassword,
+	handleResetPassword,
 } from './handlers/auth';
 import {
 	handleGetApprovedVideos,
@@ -133,6 +135,14 @@ export default {
 		// ─── Auth ─────────────────────────────────────────────────
 		if (url.pathname === '/api/auth/reviewer-login' && request.method === 'POST') {
 			return handleReviewerLogin(request, env);
+		}
+
+		if (url.pathname === '/api/auth/forgot-password' && request.method === 'POST') {
+			return handleForgotPassword(request, env);
+		}
+
+		if (url.pathname === '/api/auth/reset-password' && request.method === 'POST') {
+			return handleResetPassword(request, env);
 		}
 
 		if (url.pathname === '/api/users/add-email' && request.method === 'POST') {
