@@ -1,3 +1,4 @@
+import { hashPassword, verifyPassword } from '../helpers/password';
 import { Env, CORS } from '../types';
 
 // Reviewer login (unchanged)
@@ -17,10 +18,10 @@ export async function handleReviewerLogin(request: Request, env: Env): Promise<R
 
 // User register
 export async function handleUserRegister(request: Request, env: Env): Promise<Response> {
-	const body = (await request.json()) as { username: string; password: string };
+	const body = (await request.json()) as { username: string; password: string; email: string };
 
-	if (!body.username || !body.password) {
-		return Response.json({ error: 'Username and password are required' }, { status: 400, headers: CORS });
+	if (!body.username || !body.password || !body.email) {
+		return Response.json({ error: 'Username, email, and password are required' }, { status: 400, headers: CORS });
 	}
 
 	if (body.username.length < 3) {
@@ -31,17 +32,28 @@ export async function handleUserRegister(request: Request, env: Env): Promise<Re
 		return Response.json({ error: 'Password must be at least 6 characters' }, { status: 400, headers: CORS });
 	}
 
-	// Check if username already taken
-	const existing = await env.DB.prepare(`SELECT id FROM users WHERE username = ?`).bind(body.username.toLowerCase()).first();
+	const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+	if (!emailPattern.test(body.email)) {
+		return Response.json({ error: 'Please enter a valid email address' }, { status: 400, headers: CORS });
+	}
 
-	if (existing) {
+	const existingUsername = await env.DB.prepare(`SELECT id FROM users WHERE username = ?`).bind(body.username.toLowerCase()).first();
+
+	if (existingUsername) {
 		return Response.json({ error: 'Username already taken' }, { status: 409, headers: CORS });
 	}
 
-	const id = crypto.randomUUID();
+	const existingEmail = await env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(body.email.toLowerCase()).first();
 
-	await env.DB.prepare(`INSERT INTO users (id, username, password) VALUES (?, ?, ?)`)
-		.bind(id, body.username.toLowerCase(), body.password)
+	if (existingEmail) {
+		return Response.json({ error: 'Email already in use' }, { status: 409, headers: CORS });
+	}
+
+	const id = crypto.randomUUID();
+	const { hash, salt } = await hashPassword(body.password);
+
+	await env.DB.prepare(`INSERT INTO users (id, username, email, password, password_salt) VALUES (?, ?, ?, ?, ?)`)
+		.bind(id, body.username.toLowerCase(), body.email.toLowerCase(), hash, salt)
 		.run();
 
 	return Response.json({ id, username: body.username.toLowerCase() }, { headers: CORS });
@@ -51,15 +63,31 @@ export async function handleUserRegister(request: Request, env: Env): Promise<Re
 export async function handleUserLogin(request: Request, env: Env): Promise<Response> {
 	const body = (await request.json()) as { username: string; password: string };
 
-	const user = await env.DB.prepare(`SELECT id, username FROM users WHERE username = ? AND password = ?`)
-		.bind(body.username.toLowerCase(), body.password)
-		.first();
+	const user = await env.DB.prepare(`SELECT id, username, password, password_salt, email FROM users WHERE username = ?`)
+		.bind(body.username.toLowerCase())
+		.first<{ id: string; username: string; password: string; password_salt: string | null; email: string | null }>();
 
 	if (!user) {
 		return Response.json({ error: 'Invalid username or password' }, { status: 401, headers: CORS });
 	}
 
-	return Response.json({ id: user.id, username: user.username }, { headers: CORS });
+	if (!user.password_salt) {
+		// Legacy plain-text password — verify directly, then migrate to a hash seamlessly
+		if (user.password !== body.password) {
+			return Response.json({ error: 'Invalid username or password' }, { status: 401, headers: CORS });
+		}
+
+		const { hash, salt } = await hashPassword(body.password);
+		await env.DB.prepare(`UPDATE users SET password = ?, password_salt = ? WHERE id = ?`).bind(hash, salt, user.id).run();
+	} else {
+		// Already hashed — verify normally
+		const valid = await verifyPassword(body.password, user.password, user.password_salt);
+		if (!valid) {
+			return Response.json({ error: 'Invalid username or password' }, { status: 401, headers: CORS });
+		}
+	}
+
+	return Response.json({ id: user.id, username: user.username, needs_email: !user.email }, { headers: CORS });
 }
 
 // Just the user's basic info — no videos
@@ -164,4 +192,27 @@ export async function handleUploadProfileImage(request: Request, env: Env): Prom
 	await env.DB.prepare(`UPDATE users SET profile_image = ? WHERE id = ?`).bind(imageUrl, userId).run();
 
 	return Response.json({ profile_image: imageUrl }, { headers: CORS });
+}
+
+export async function handleAddEmail(request: Request, env: Env): Promise<Response> {
+	const body = (await request.json()) as { user_id: string; email: string };
+
+	if (!body.user_id || !body.email) {
+		return Response.json({ error: 'user_id and email are required' }, { status: 400, headers: CORS });
+	}
+
+	const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+	if (!emailPattern.test(body.email)) {
+		return Response.json({ error: 'Please enter a valid email address' }, { status: 400, headers: CORS });
+	}
+
+	const existingEmail = await env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(body.email.toLowerCase()).first();
+
+	if (existingEmail) {
+		return Response.json({ error: 'Email already in use' }, { status: 409, headers: CORS });
+	}
+
+	await env.DB.prepare(`UPDATE users SET email = ? WHERE id = ?`).bind(body.email.toLowerCase(), body.user_id).run();
+
+	return Response.json({ message: 'email added' }, { headers: CORS });
 }

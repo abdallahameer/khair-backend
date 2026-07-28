@@ -6,6 +6,7 @@ export interface Env {
 	R2_PUBLIC_URL_IMAGES: string;
 	CONVERSATION_ROOM: DurableObjectNamespace;
 	USER_INBOX: DurableObjectNamespace;
+	RESEND_API_KEY: string;
 }
 
 export const CORS = {
