@@ -92,14 +92,47 @@ export async function handleUserLogin(request: Request, env: Env): Promise<Respo
 }
 
 // Just the user's basic info — no videos
-export async function handleGetUserProfile(userId: string, env: Env): Promise<Response> {
+export async function handleGetUserProfile(userId: string, env: Env, viewerId?: string): Promise<Response> {
 	const user = await env.DB.prepare(`SELECT id, username, created_at, profile_image FROM users WHERE id = ?`).bind(userId).first();
 
 	if (!user) {
 		return Response.json({ error: 'User not found' }, { status: 404, headers: CORS });
 	}
 
-	return Response.json({ user }, { headers: CORS });
+	const followersCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM follows WHERE following_id = ?`)
+		.bind(userId)
+		.first<{ count: number }>();
+
+	const followingCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM follows WHERE follower_id = ?`)
+		.bind(userId)
+		.first<{ count: number }>();
+
+	const likesCount = await env.DB.prepare(
+		`SELECT COALESCE(SUM(likes_count), 0) as count FROM videos WHERE user_id = ? AND status = 'approved'`,
+	)
+		.bind(userId)
+		.first<{ count: number }>();
+
+	let isFollowing = false;
+	if (viewerId) {
+		const existing = await env.DB.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?`)
+			.bind(viewerId, userId)
+			.first();
+		isFollowing = !!existing;
+	}
+
+	return Response.json(
+		{
+			user: {
+				...user,
+				followers_count: followersCount?.count ?? 0,
+				following_count: followingCount?.count ?? 0,
+				likes_count: likesCount?.count ?? 0,
+				is_following: isFollowing,
+			},
+		},
+		{ headers: CORS },
+	);
 }
 
 // Paginated list of this user's own uploaded (approved) videos

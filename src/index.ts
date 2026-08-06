@@ -10,6 +10,7 @@ import {
 	handleForgotPassword,
 	handleResetPassword,
 } from './handlers/auth';
+import { handleFollowUser, handleUnfollowUser } from './handlers/follows';
 import {
 	handleGetApprovedVideos,
 	handleGetPendingVideos,
@@ -196,7 +197,8 @@ export default {
 		// General profile route — now just user info, must stay LAST among /api/users/ GET routes
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
-			return handleGetUserProfile(userId, env);
+			const viewerId = url.searchParams.get('viewer_id') ?? undefined;
+			return handleGetUserProfile(userId, env, viewerId);
 		}
 
 		// ─── Messaging ────────────────────────────────────────────────
