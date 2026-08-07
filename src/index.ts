@@ -194,6 +194,16 @@ export default {
 			return stub.fetch(request);
 		}
 
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/follow$/) && request.method === 'POST') {
+			const userId = url.pathname.split('/')[3];
+			return handleFollowUser(userId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/follow$/) && request.method === 'DELETE') {
+			const userId = url.pathname.split('/')[3];
+			return handleUnfollowUser(userId, request, env);
+		}
+
 		// General profile route — now just user info, must stay LAST among /api/users/ GET routes
 		if (url.pathname.startsWith('/api/users/') && request.method === 'GET') {
 			const userId = url.pathname.split('/api/users/')[1];
