@@ -1,5 +1,17 @@
 import { Env, CORS } from '../types';
 
+export const VIDEO_CATEGORIES = [
+	'Technology & Programming',
+	'Business & Entrepreneurship',
+	'Finance & Investing',
+	'Design & Creativity',
+	'Education & Personal Development',
+	'Science, Culture & Knowledge',
+	'Religious',
+] as const;
+
+export type VideoCategory = (typeof VIDEO_CATEGORIES)[number];
+
 // Main feed — all approved videos
 export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?: string, limit: number = 10): Promise<Response> {
 	const safeLimit = Math.min(Math.max(limit, 1), 50); // clamp between 1-50
@@ -8,7 +20,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?
 
 	const query = userId
 		? `SELECT 
-         videos.id, videos.video_url, videos.uploaded_at, 
+         videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
          EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
@@ -19,7 +31,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?
        ORDER BY videos.uploaded_at DESC
        LIMIT ?`
 		: `SELECT 
-         videos.id, videos.video_url, videos.uploaded_at,
+         videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
          0 as is_liked, 0 as is_saved
@@ -53,7 +65,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?
 
 export async function handleGetPendingVideos(env: Env): Promise<Response> {
 	const result = await env.DB.prepare(
-		`SELECT videos.id, videos.video_url, videos.uploaded_at, users.id as user_id, users.username
+		`SELECT videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category, users.id as user_id, users.username
      FROM videos
      JOIN users ON videos.user_id = users.id
      WHERE videos.status = 'pending'
@@ -63,7 +75,7 @@ export async function handleGetPendingVideos(env: Env): Promise<Response> {
 	return Response.json(result.results, { headers: CORS });
 }
 
-// Upload — requires user_id in the form
+// Upload — requires user_id, category. Instant publish, no review queue.
 export async function handleUploadVideo(request: Request, env: Env): Promise<Response> {
 	let formData: FormData;
 	try {
@@ -74,6 +86,8 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 
 	const file = formData.get('video') as File | null;
 	const userId = formData.get('user_id') as string | null;
+	const description = (formData.get('description') as string | null) ?? '';
+	const category = formData.get('category') as string | null;
 
 	if (!file) {
 		return Response.json({ error: 'No video file provided' }, { status: 400, headers: CORS });
@@ -81,6 +95,10 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 
 	if (!userId) {
 		return Response.json({ error: 'user_id is required' }, { status: 400, headers: CORS });
+	}
+
+	if (!category || !VIDEO_CATEGORIES.includes(category as VideoCategory)) {
+		return Response.json({ error: 'A valid category is required' }, { status: 400, headers: CORS });
 	}
 
 	// Make sure the user exists
@@ -98,6 +116,10 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 		return Response.json({ error: 'File too large (max 100MB)' }, { status: 400, headers: CORS });
 	}
 
+	if (description.length > 2000) {
+		return Response.json({ error: 'Description is too long (max 2000 characters)' }, { status: 400, headers: CORS });
+	}
+
 	const ext = file.name.split('.').pop() ?? 'mp4';
 	const key = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
@@ -109,14 +131,18 @@ export async function handleUploadVideo(request: Request, env: Env): Promise<Res
 	const id = crypto.randomUUID();
 	const uploadedAt = new Date().toISOString();
 
-	await env.DB.prepare(`INSERT INTO videos (id, user_id, video_url, status, uploaded_at) VALUES (?, ?, ?, 'pending', ?)`)
-		.bind(id, userId, videoUrl, uploadedAt)
+	// Instant publish — status goes straight to 'approved', no review step
+	await env.DB.prepare(
+		`INSERT INTO videos (id, user_id, video_url, status, uploaded_at, description, category)
+		 VALUES (?, ?, ?, 'approved', ?, ?, ?)`,
+	)
+		.bind(id, userId, videoUrl, uploadedAt, description.trim(), category)
 		.run();
 
-	return Response.json({ id, video_url: videoUrl, uploaded_at: uploadedAt }, { headers: CORS });
+	return Response.json({ id, video_url: videoUrl, uploaded_at: uploadedAt, description: description.trim(), category }, { headers: CORS });
 }
 
-// Approve
+// Approve — kept for future report-review flow, unused by upload now
 export async function handleApproveVideo(id: string, env: Env): Promise<Response> {
 	const video = await env.DB.prepare(`SELECT * FROM videos WHERE id = ? AND status = 'pending'`)
 		.bind(id)
@@ -131,7 +157,7 @@ export async function handleApproveVideo(id: string, env: Env): Promise<Response
 	return Response.json({ message: 'approved' }, { headers: CORS });
 }
 
-// Reject — delete from D1 and R2
+// Reject — delete from D1 and R2. Kept for future report-review flow.
 export async function handleRejectVideo(id: string, env: Env): Promise<Response> {
 	const video = await env.DB.prepare(`SELECT * FROM videos WHERE id = ? AND status = 'pending'`)
 		.bind(id)
@@ -150,7 +176,7 @@ export async function handleRejectVideo(id: string, env: Env): Promise<Response>
 export async function handleGetVideoById(videoId: string, env: Env, viewerId?: string): Promise<Response> {
 	const query = viewerId
 		? `SELECT 
-         videos.id, videos.video_url, videos.uploaded_at,
+         videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
          EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
@@ -159,7 +185,7 @@ export async function handleGetVideoById(videoId: string, env: Env, viewerId?: s
        JOIN users ON videos.user_id = users.id
        WHERE videos.id = ? AND videos.status = 'approved'`
 		: `SELECT 
-         videos.id, videos.video_url, videos.uploaded_at,
+         videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
          0 as is_liked, 0 as is_saved
