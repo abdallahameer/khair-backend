@@ -43,6 +43,7 @@ import {
 	handleUpdateMessage,
 	handleDeleteConversation,
 } from './handlers/messaging';
+import { handleReportVideo, handleGetReports, handleDeleteReportedVideo } from './handlers/reports';
 import { ConversationRoom } from './durable-objects/ConversationRoom';
 import { UserInbox } from './durable-objects/UserInbox';
 
@@ -131,6 +132,19 @@ export default {
 		if (url.pathname.match(/^\/api\/videos\/[^/]+\/comments$/) && request.method === 'GET') {
 			const videoId = url.pathname.split('/')[3];
 			return handleGetComments(videoId, env);
+		}
+
+		if (url.pathname.match(/^\/api\/videos\/[^/]+\/report$/) && request.method === 'POST') {
+			const videoId = url.pathname.split('/')[3];
+			return handleReportVideo(videoId, request, env);
+		}
+		if (url.pathname === '/api/reports' && request.method === 'GET') {
+			return handleGetReports(env);
+		}
+
+		if (url.pathname.match(/^\/api\/reports\/video\/[^/]+$/) && request.method === 'DELETE') {
+			const videoId = url.pathname.split('/')[4];
+			return handleDeleteReportedVideo(videoId, env);
 		}
 
 		// ─── Auth ─────────────────────────────────────────────────
