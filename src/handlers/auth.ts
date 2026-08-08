@@ -148,7 +148,7 @@ export async function handleGetUserVideos(
 
 	const query = viewerId
 		? `SELECT 
-        id, video_url, uploaded_at,
+        id, video_url, uploaded_at, description, category,
         likes_count, comments_count, views_count, saves_count,
         EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
@@ -157,7 +157,7 @@ export async function handleGetUserVideos(
        ORDER BY uploaded_at DESC
        LIMIT ?`
 		: `SELECT 
-        id, video_url, uploaded_at,
+        id, video_url, uploaded_at, description, category,
         likes_count, comments_count, views_count, saves_count,
         0 as is_liked, 0 as is_saved
        FROM videos 
