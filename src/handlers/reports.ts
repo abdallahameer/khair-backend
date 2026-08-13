@@ -93,11 +93,27 @@ export async function handleDeleteReportedVideo(videoId: string, env: Env): Prom
 		return Response.json({ error: 'Video not found' }, { status: 404, headers: CORS });
 	}
 
+	// Delete every row that references this video, and the video row itself,
+	// as ONE atomic transaction. If any statement fails (e.g. a foreign key
+	// constraint), the whole batch rolls back — nothing is left half-deleted.
+	try {
+		await env.DB.batch([
+			env.DB.prepare(`DELETE FROM likes WHERE video_id = ?`).bind(videoId),
+			env.DB.prepare(`DELETE FROM saves WHERE video_id = ?`).bind(videoId),
+			env.DB.prepare(`DELETE FROM views WHERE video_id = ?`).bind(videoId),
+			env.DB.prepare(`DELETE FROM comments WHERE video_id = ?`).bind(videoId),
+			env.DB.prepare(`DELETE FROM reports WHERE video_id = ?`).bind(videoId),
+			env.DB.prepare(`DELETE FROM videos WHERE id = ?`).bind(videoId),
+		]);
+	} catch (err) {
+		console.error('Failed to delete video records:', err);
+		return Response.json({ error: 'Failed to delete video from the database' }, { status: 500, headers: CORS });
+	}
+
+	// Only remove the actual file once every DB row is confirmed gone —
+	// this way a DB failure never leaves an orphaned, unplayable video.
 	const key = video.video_url.split('/').pop();
 	if (key) await env.VIDEOS_BUCKET.delete(key);
-
-	await env.DB.prepare(`DELETE FROM reports WHERE video_id = ?`).bind(videoId).run();
-	await env.DB.prepare(`DELETE FROM videos WHERE id = ?`).bind(videoId).run();
 
 	return Response.json({ message: 'Video deleted' }, { headers: CORS });
 }
