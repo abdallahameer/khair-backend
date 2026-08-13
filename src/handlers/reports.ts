@@ -66,6 +66,21 @@ export async function handleGetReports(env: Env): Promise<Response> {
 	return Response.json(result.results, { headers: CORS });
 }
 
+// Admin-facing: deny/dismiss a single report — removes just this report row.
+// The video and any OTHER reports on it are untouched. Use this when a
+// report turns out to be unfounded.
+export async function handleDenyReport(reportId: string, env: Env): Promise<Response> {
+	const report = await env.DB.prepare(`SELECT id FROM reports WHERE id = ?`).bind(reportId).first();
+
+	if (!report) {
+		return Response.json({ error: 'Report not found' }, { status: 404, headers: CORS });
+	}
+
+	await env.DB.prepare(`DELETE FROM reports WHERE id = ?`).bind(reportId).run();
+
+	return Response.json({ message: 'Report denied' }, { headers: CORS });
+}
+
 // Admin-facing: manually delete a reported video — removes it from D1, R2, and
 // clears its report rows. This is the ONLY thing that actually removes a video
 // from the platform.
