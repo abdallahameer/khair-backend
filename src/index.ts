@@ -44,6 +44,7 @@ import {
 	handleDeleteConversation,
 } from './handlers/messaging';
 import { handleReportVideo, handleGetReports, handleDeleteReportedVideo, handleDenyReport } from './handlers/reports';
+import { handleSetUserCategories, handleGetUserCategories } from './handlers/categories';
 import { ConversationRoom } from './durable-objects/ConversationRoom';
 import { UserInbox } from './durable-objects/UserInbox';
 
@@ -221,6 +222,16 @@ export default {
 		if (url.pathname.match(/^\/api\/users\/[^/]+\/follow$/) && request.method === 'DELETE') {
 			const userId = url.pathname.split('/')[3];
 			return handleUnfollowUser(userId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/categories$/) && request.method === 'POST') {
+			const userId = url.pathname.split('/')[3];
+			return handleSetUserCategories(userId, request, env);
+		}
+
+		if (url.pathname.match(/^\/api\/users\/[^/]+\/categories$/) && request.method === 'GET') {
+			const userId = url.pathname.split('/')[3];
+			return handleGetUserCategories(userId, env);
 		}
 
 		// General profile route — now just user info, must stay LAST among /api/users/ GET routes
