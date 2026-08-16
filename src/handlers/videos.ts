@@ -12,11 +12,40 @@ export const VIDEO_CATEGORIES = [
 
 export type VideoCategory = (typeof VIDEO_CATEGORIES)[number];
 
-// Main feed — all approved videos
-export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?: string, limit: number = 10): Promise<Response> {
-	const safeLimit = Math.min(Math.max(limit, 1), 50); // clamp between 1-50
+// Personalized feed — filtered to the viewer's preferred categories (if
+// they have any saved), ranked by a weighted score: likes > views > saves,
+// with a flat boost for accounts the viewer follows. The score is divided
+// by the video's age in days so a viral old video can't permanently
+// outrank fresh uploads — this is a deliberate balance the product wants.
+export async function handleGetApprovedVideos(env: Env, userId?: string, offset: number = 0, limit: number = 10): Promise<Response> {
+	const safeLimit = Math.min(Math.max(limit, 1), 50);
+	const safeOffset = Math.max(offset, 0);
 
-	const cursorClause = cursor ? `AND videos.uploaded_at < ?` : '';
+	let preferredCategories: string[] = [];
+	if (userId) {
+		const prefs = await env.DB.prepare(`SELECT category FROM user_category_preferences WHERE user_id = ?`).bind(userId).all();
+		preferredCategories = (prefs.results as { category: string }[]).map((r) => r.category);
+	}
+
+	// No saved preferences (guest, or a user with none) → don't filter, show everything
+	const categoryClause = preferredCategories.length > 0 ? `AND videos.category IN (${preferredCategories.map(() => '?').join(',')})` : '';
+
+	const scoreWithFollow = `
+		(
+			(videos.likes_count * 5) +
+			(videos.views_count * 3) +
+			(videos.saves_count * 2) +
+			(CASE WHEN follows.follower_id IS NOT NULL THEN 15 ELSE 0 END)
+		) / ((julianday('now') - julianday(videos.uploaded_at)) + 2)
+	`;
+
+	const scoreNoFollow = `
+		(
+			(videos.likes_count * 5) +
+			(videos.views_count * 3) +
+			(videos.saves_count * 2)
+		) / ((julianday('now') - julianday(videos.uploaded_at)) + 2)
+	`;
 
 	const query = userId
 		? `SELECT 
@@ -24,43 +53,37 @@ export async function handleGetApprovedVideos(env: Env, userId?: string, cursor?
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
          EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
-         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
+         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved,
+         ${scoreWithFollow} as score
        FROM videos
        JOIN users ON videos.user_id = users.id
-       WHERE videos.status = 'approved' ${cursorClause}
-       ORDER BY videos.uploaded_at DESC
-       LIMIT ?`
+       LEFT JOIN follows ON follows.follower_id = ? AND follows.following_id = videos.user_id
+       WHERE videos.status = 'approved' ${categoryClause}
+       ORDER BY score DESC, videos.uploaded_at DESC
+       LIMIT ? OFFSET ?`
 		: `SELECT 
          videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
-         0 as is_liked, 0 as is_saved
+         0 as is_liked, 0 as is_saved,
+         ${scoreNoFollow} as score
        FROM videos
        JOIN users ON videos.user_id = users.id
-       WHERE videos.status = 'approved' ${cursorClause}
-       ORDER BY videos.uploaded_at DESC
-       LIMIT ?`;
+       WHERE videos.status = 'approved' ${categoryClause}
+       ORDER BY score DESC, videos.uploaded_at DESC
+       LIMIT ? OFFSET ?`;
 
-	let stmt;
-	if (userId && cursor) {
-		stmt = env.DB.prepare(query).bind(userId, userId, cursor, safeLimit + 1);
-	} else if (userId) {
-		stmt = env.DB.prepare(query).bind(userId, userId, safeLimit + 1);
-	} else if (cursor) {
-		stmt = env.DB.prepare(query).bind(cursor, safeLimit + 1);
-	} else {
-		stmt = env.DB.prepare(query).bind(safeLimit + 1);
-	}
+	const stmt = userId
+		? env.DB.prepare(query).bind(userId, userId, userId, ...preferredCategories, safeLimit + 1, safeOffset)
+		: env.DB.prepare(query).bind(...preferredCategories, safeLimit + 1, safeOffset);
 
 	const result = await stmt.all();
 	const rows = result.results as any[];
 
-	// We fetched one extra row to know if there's a next page
 	const hasMore = rows.length > safeLimit;
 	const videos = hasMore ? rows.slice(0, safeLimit) : rows;
-	const nextCursor = hasMore ? videos[videos.length - 1].uploaded_at : null;
 
-	return Response.json({ videos, nextCursor }, { headers: CORS });
+	return Response.json({ videos, hasMore, nextOffset: safeOffset + videos.length }, { headers: CORS });
 }
 
 export async function handleGetPendingVideos(env: Env): Promise<Response> {

@@ -61,9 +61,9 @@ export default {
 
 		if (url.pathname === '/api/videos/approved' && request.method === 'GET') {
 			const userId = url.searchParams.get('user_id') ?? undefined;
-			const cursor = url.searchParams.get('cursor') ?? undefined;
+			const offset = url.searchParams.get('offset') ? parseInt(url.searchParams.get('offset')!, 10) : 0;
 			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
-			return handleGetApprovedVideos(env, userId, cursor, limit);
+			return handleGetApprovedVideos(env, userId, offset, limit);
 		}
 
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
