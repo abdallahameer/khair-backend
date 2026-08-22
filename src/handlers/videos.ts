@@ -204,20 +204,22 @@ export async function handleGetVideoById(videoId: string, env: Env, viewerId?: s
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
          EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
-         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved
+         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved,
+         CASE WHEN follows.follower_id IS NOT NULL THEN 1 ELSE 0 END as is_following
        FROM videos
        JOIN users ON videos.user_id = users.id
+       LEFT JOIN follows ON follows.follower_id = ? AND follows.following_id = videos.user_id
        WHERE videos.id = ? AND videos.status = 'approved'`
 		: `SELECT 
          videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
-         0 as is_liked, 0 as is_saved
+         0 as is_liked, 0 as is_saved, 0 as is_following
        FROM videos
        JOIN users ON videos.user_id = users.id
        WHERE videos.id = ? AND videos.status = 'approved'`;
 
-	const stmt = viewerId ? env.DB.prepare(query).bind(viewerId, viewerId, videoId) : env.DB.prepare(query).bind(videoId);
+	const stmt = viewerId ? env.DB.prepare(query).bind(viewerId, viewerId, viewerId, videoId) : env.DB.prepare(query).bind(videoId);
 
 	const video = await stmt.first();
 
