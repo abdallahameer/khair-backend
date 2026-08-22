@@ -54,6 +54,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string, offset:
          users.id as user_id, users.username, users.profile_image,
          EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
          EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved,
+         CASE WHEN follows.follower_id IS NOT NULL THEN 1 ELSE 0 END as is_following,
          ${scoreWithFollow} as score
        FROM videos
        JOIN users ON videos.user_id = users.id
@@ -65,7 +66,7 @@ export async function handleGetApprovedVideos(env: Env, userId?: string, offset:
          videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
          videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
          users.id as user_id, users.username, users.profile_image,
-         0 as is_liked, 0 as is_saved,
+         0 as is_liked, 0 as is_saved, 0 as is_following,
          ${scoreNoFollow} as score
        FROM videos
        JOIN users ON videos.user_id = users.id
