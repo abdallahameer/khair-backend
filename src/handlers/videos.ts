@@ -229,3 +229,76 @@ export async function handleGetVideoById(videoId: string, env: Env, viewerId?: s
 
 	return Response.json(video, { headers: CORS });
 }
+
+// Explore feed — shows ALL approved videos across ALL categories (no
+// personal-preference filtering), ranked by the same score as the main
+// feed. Optional `category` param filters to one category when a pill is tapped.
+export async function handleGetExploreVideos(
+	env: Env,
+	userId?: string,
+	category?: string,
+	offset: number = 0,
+	limit: number = 10,
+): Promise<Response> {
+	const safeLimit = Math.min(Math.max(limit, 1), 50);
+	const safeOffset = Math.max(offset, 0);
+
+	const categoryClause = category ? `AND videos.category = ?` : '';
+
+	const scoreWithFollow = `
+		(
+			(videos.likes_count * 5) +
+			(videos.views_count * 3) +
+			(videos.saves_count * 2) +
+			(CASE WHEN follows.follower_id IS NOT NULL THEN 15 ELSE 0 END)
+		) / ((julianday('now') - julianday(videos.uploaded_at)) + 2)
+	`;
+
+	const scoreNoFollow = `
+		(
+			(videos.likes_count * 5) +
+			(videos.views_count * 3) +
+			(videos.saves_count * 2)
+		) / ((julianday('now') - julianday(videos.uploaded_at)) + 2)
+	`;
+
+	const query = userId
+		? `SELECT 
+         videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
+         videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
+         users.id as user_id, users.username, users.profile_image,
+         EXISTS(SELECT 1 FROM likes WHERE likes.video_id = videos.id AND likes.user_id = ?) as is_liked,
+         EXISTS(SELECT 1 FROM saves WHERE saves.video_id = videos.id AND saves.user_id = ?) as is_saved,
+         CASE WHEN follows.follower_id IS NOT NULL THEN 1 ELSE 0 END as is_following,
+         ${scoreWithFollow} as score
+       FROM videos
+       JOIN users ON videos.user_id = users.id
+       LEFT JOIN follows ON follows.follower_id = ? AND follows.following_id = videos.user_id
+       WHERE videos.status = 'approved' ${categoryClause}
+       ORDER BY score DESC, videos.uploaded_at DESC
+       LIMIT ? OFFSET ?`
+		: `SELECT 
+         videos.id, videos.video_url, videos.uploaded_at, videos.description, videos.category,
+         videos.likes_count, videos.comments_count, videos.views_count, videos.saves_count,
+         users.id as user_id, users.username, users.profile_image,
+         0 as is_liked, 0 as is_saved, 0 as is_following,
+         ${scoreNoFollow} as score
+       FROM videos
+       JOIN users ON videos.user_id = users.id
+       WHERE videos.status = 'approved' ${categoryClause}
+       ORDER BY score DESC, videos.uploaded_at DESC
+       LIMIT ? OFFSET ?`;
+
+	const bindings: any[] = userId ? [userId, userId, userId] : [];
+	if (category) bindings.push(category);
+	bindings.push(safeLimit + 1, safeOffset);
+
+	const stmt = env.DB.prepare(query).bind(...bindings);
+	const result = await stmt.all();
+	const rows = result.results as any[];
+
+	const hasMore = rows.length > safeLimit;
+	const videos = hasMore ? rows.slice(0, safeLimit) : rows;
+
+	return Response.json({ videos, hasMore, nextOffset: safeOffset + videos.length }, { headers: CORS });
+}

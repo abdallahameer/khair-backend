@@ -18,6 +18,7 @@ import {
 	handleApproveVideo,
 	handleRejectVideo,
 	handleGetVideoById,
+	handleGetExploreVideos,
 } from './handlers/videos';
 import {
 	handleLikeVideo,
@@ -64,6 +65,14 @@ export default {
 			const offset = url.searchParams.get('offset') ? parseInt(url.searchParams.get('offset')!, 10) : 0;
 			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
 			return handleGetApprovedVideos(env, userId, offset, limit);
+		}
+
+		if (url.pathname === '/api/videos/explore' && request.method === 'GET') {
+			const userId = url.searchParams.get('user_id') ?? undefined;
+			const category = url.searchParams.get('category') ?? undefined;
+			const offset = url.searchParams.get('offset') ? parseInt(url.searchParams.get('offset')!, 10) : 0;
+			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
+			return handleGetExploreVideos(env, userId, category, offset, limit);
 		}
 
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
