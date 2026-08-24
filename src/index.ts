@@ -19,8 +19,8 @@ import {
 	handleRejectVideo,
 	handleGetVideoById,
 	handleGetExploreVideos,
-	handleSearchVideos,
 } from './handlers/videos';
+import { handleSearch } from './handlers/search';
 import {
 	handleLikeVideo,
 	handleUnlikeVideo,
@@ -76,12 +76,14 @@ export default {
 			return handleGetExploreVideos(env, userId, category, offset, limit);
 		}
 
-		if (url.pathname === '/api/videos/search' && request.method === 'GET') {
+		if (url.pathname === '/api/search' && request.method === 'GET') {
 			const q = url.searchParams.get('q') ?? '';
 			const userId = url.searchParams.get('user_id') ?? undefined;
-			const offset = url.searchParams.get('offset') ? parseInt(url.searchParams.get('offset')!, 10) : 0;
-			const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 10;
-			return handleSearchVideos(env, q, userId, offset, limit);
+			const videoOffset = url.searchParams.get('video_offset') ? parseInt(url.searchParams.get('video_offset')!, 10) : 0;
+			const videoLimit = url.searchParams.get('video_limit') ? parseInt(url.searchParams.get('video_limit')!, 10) : 10;
+			const userOffset = url.searchParams.get('user_offset') ? parseInt(url.searchParams.get('user_offset')!, 10) : 0;
+			const userLimit = url.searchParams.get('user_limit') ? parseInt(url.searchParams.get('user_limit')!, 10) : 5;
+			return handleSearch(env, q, userId, videoOffset, videoLimit, userOffset, userLimit);
 		}
 
 		if (url.pathname === '/api/videos/pending' && request.method === 'GET') {
